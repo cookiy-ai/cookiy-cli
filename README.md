@@ -5,17 +5,14 @@ Command-line client for [Cookiy AI](https://cookiy.ai) — run user research, qu
 ## Install
 
 ```bash
-# Run once, no install
-npx cookiy-cli <command>
-
-# Or install globally
+# Install once (requires Node.js 18+)
 npm install -g cookiy-cli
 
 # Upgrade
 npm update -g cookiy-cli
 ```
 
-Requires Node.js **18+**.
+After install, the binary is available as `cookiy` on your PATH.
 
 ## Sign in
 
