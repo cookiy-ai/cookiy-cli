@@ -1,13 +1,26 @@
 {
   "name": "cookiy-cli",
-  "version": "1.21.5",
-  "description": "Command-line client for Cookiy AI — user research at scale.",
+  "version": "1.21.6",
+  "description": "Cookiy AI CLI — end-to-end user research from your terminal: AI interviews, synthetic users, quant surveys, participant recruitment.",
   "keywords": [
     "cookiy",
     "cli",
     "user-research",
+    "ux-research",
+    "interview",
     "survey",
-    "interview"
+    "synthetic-user",
+    "ai",
+    "agent",
+    "ai-agent",
+    "claude",
+    "claude-code",
+    "cursor",
+    "codex",
+    "openclaw",
+    "windsurf",
+    "manus",
+    "cline"
   ],
   "homepage": "https://cookiy.ai",
   "bugs": {
