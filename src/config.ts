@@ -1,7 +1,10 @@
 import os from "node:os";
 import path from "node:path";
 
-export const VERSION = "1.21.4";
+// Injected at build time from package.json via tsup `define` — keeping
+// the version number in a single source of truth.
+declare const __COOKIY_VERSION__: string;
+export const VERSION = __COOKIY_VERSION__;
 export const DEFAULT_SERVER_URL = "https://s-api.cookiy.ai";
 export const API_RPC_TIMEOUT = parseInt(
   process.env.COOKIY_API_RPC_TIMEOUT || "600",

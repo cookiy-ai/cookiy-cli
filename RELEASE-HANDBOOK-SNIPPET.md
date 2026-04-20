@@ -35,23 +35,20 @@ npm update -g cookiy-cli          # 升级全局安装
 ```bash
 cd /Users/yupeng/Downloads/cookiy/cookiy-cli
 
-# 1) 版本号 bump（同时修改 package.json）
+# 1) 版本号 bump（唯一来源：package.json。tsup 会在 build 时把版本号注入到 bundle）
 npm version patch --no-git-tag-version          # 或 minor / major
 
-# 2) 手动同步 src/config.ts 的 VERSION = "<new>"（必须，CLI 输出的 --version 从这里取）
-
-# 3) 本地验证链
+# 2) 本地验证链
 npm run typecheck
 npm run build
 node dist/index.js --version                    # 核对输出等于新版号
-node dist/index.js help | head -5               # 冒烟测试
 
-# 4) 包内容预览 & 发布
+# 3) 包内容预览 & 发布
 npm pack --dry-run                              # 应只包含 LICENSE / README.md / dist/index.js / package.json
 npm publish --access public
 
-# 5) git 同步
-git add package.json package-lock.json src/config.ts
+# 4) git 同步
+git add package.json package-lock.json
 git commit -m "release: v<new>"
 git tag v<new>
 git push --tags
