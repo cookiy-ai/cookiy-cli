@@ -5,7 +5,6 @@ import {
   resolveServerBase,
   resolveLoginUrl,
   INIT_TIMEOUT,
-  VERSION,
 } from "./config.js";
 import { die, dieNoAccess } from "./util.js";
 
@@ -31,11 +30,7 @@ export async function runSaveToken(input: string): Promise<void> {
   }
   if (!at) die("Could not find access_token in input.");
 
-  let apiEnd =
-    runtime.apiUrlOpt || process.env.COOKIY_API_URL || process.env.COOKIY_MCP_URL || "";
-  if (!apiEnd) {
-    apiEnd = `${resolveServerBase().replace(/\/$/, "")}/mcp`;
-  }
+  const apiEnd = `${resolveServerBase().replace(/\/$/, "")}/mcp`;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), INIT_TIMEOUT * 1000);
@@ -51,12 +46,8 @@ export async function runSaveToken(input: string): Promise<void> {
       body: JSON.stringify({
         jsonrpc: "2.0",
         id: 1,
-        method: "initialize",
-        params: {
-          protocolVersion: "2025-03-26",
-          capabilities: {},
-          clientInfo: { name: "cookiy-cli", version: VERSION },
-        },
+        method: "tools/call",
+        params: { name: "cookiy_balance_get", arguments: {} },
       }),
       signal: controller.signal,
     });

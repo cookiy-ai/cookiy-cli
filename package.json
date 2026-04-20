@@ -1,6 +1,6 @@
 {
   "name": "cookiy-cli",
-  "version": "1.21.3",
+  "version": "1.21.4",
   "description": "Command-line client for Cookiy AI — user research at scale.",
   "keywords": [
     "cookiy",

@@ -19,14 +19,6 @@ program
   )
   .version(VERSION, "-v, --version", "Output the version number")
   .option(
-    "--server-url <url>",
-    "API origin (default https://s-api.cookiy.ai)",
-  )
-  .option(
-    "--api-url <url>",
-    "Full JSON-RPC endpoint (overrides COOKIY_API_URL)",
-  )
-  .option(
     "--token <path>",
     "Token file path (default ~/.cookiy/token.txt)",
   )
@@ -47,9 +39,7 @@ Sign in:  https://s-api.cookiy.ai/oauth/cli/start`,
 
 // Sync global options → runtime, then (for most commands) load credentials
 program.hook("preAction", (_thisCmd, actionCmd) => {
-  const g = program.opts<{ serverUrl?: string; apiUrl?: string; token?: string }>();
-  if (g.serverUrl) runtime.serverUrlOpt = g.serverUrl;
-  if (g.apiUrl) runtime.apiUrlOpt = g.apiUrl;
+  const g = program.opts<{ token?: string }>();
   if (g.token) runtime.tokenPath = g.token;
 
   if (actionCmd.name() === "save-token") return;
@@ -63,11 +53,8 @@ program
   .description("Validate and save an access token (from browser sign-in)")
   .argument("<token_or_json>", "raw access_token string or JSON with access_token field")
   .action(async (input: string) => {
-    const g = program.opts<{ serverUrl?: string; apiUrl?: string; token?: string }>();
-    if (g.serverUrl) runtime.serverUrlOpt = g.serverUrl;
-    if (g.apiUrl) runtime.apiUrlOpt = g.apiUrl;
+    const g = program.opts<{ token?: string }>();
     if (g.token) runtime.tokenPath = g.token;
-
     await runSaveToken(input);
   });
 
