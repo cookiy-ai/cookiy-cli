@@ -5,14 +5,9 @@ Command-line client for Cookiy AI — run user research, quant surveys, and recr
 ## Install
 
 ```bash
-# Run once, no install
-npx cookiy-cli <command>
-
-# Or install globally
+# Install once (requires Node.js 18+)
 npm install -g cookiy-cli
 
 # Upgrade
 npm update -g cookiy-cli
 ```
-
-Requires Node.js 18+.
