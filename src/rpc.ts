@@ -1,4 +1,4 @@
-import { runtime, API_RPC_TIMEOUT, INIT_TIMEOUT, VERSION } from "./config.js";
+import { runtime, API_RPC_TIMEOUT } from "./config.js";
 import { die, dieNoAccess } from "./util.js";
 
 let rpcId = 0;
@@ -27,10 +27,10 @@ export interface JsonRpcResponse {
   [key: string]: unknown;
 }
 
-export async function postJsonRpc(
+async function postJsonRpc(
   payload: unknown,
   timeoutSec = API_RPC_TIMEOUT,
-): Promise<JsonRpcResponse | string | null> {
+): Promise<JsonRpcResponse | null> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutSec * 1000);
   try {
@@ -59,7 +59,7 @@ export async function postJsonRpc(
     try {
       return JSON.parse(body) as JsonRpcResponse;
     } catch {
-      return body;
+      return null;
     }
   } catch (e: unknown) {
     clearTimeout(timeoutId);
@@ -73,7 +73,7 @@ export async function postJsonRpc(
   }
 }
 
-export function checkAuthError(body: unknown): void {
+function checkAuthError(body: unknown): void {
   if (typeof body !== "object" || body === null) return;
   const b = body as JsonRpcResponse;
   if (b.status_code === 401 || b.status_code === 403) dieNoAccess();
@@ -83,7 +83,7 @@ export function checkAuthError(body: unknown): void {
   }
 }
 
-export function checkRpcError(resp: unknown): boolean {
+function checkRpcError(resp: unknown): boolean {
   if (!resp || typeof resp !== "object") return false;
   const r = resp as JsonRpcResponse;
   const msg = r.error?.message;
@@ -101,7 +101,7 @@ export function checkRpcError(resp: unknown): boolean {
   return false;
 }
 
-export function emitToolResult(resp: unknown): unknown {
+function emitToolResult(resp: unknown): unknown {
   if (!resp || typeof resp !== "object") return null;
   const r = (resp as JsonRpcResponse).result;
   if (!r) return null;
@@ -111,50 +111,20 @@ export function emitToolResult(resp: unknown): unknown {
   return null;
 }
 
-let _initialized = false;
-
-async function ensureInitialized(): Promise<void> {
-  if (_initialized) return;
-  const initResp = await postJsonRpc(
-    {
-      jsonrpc: "2.0",
-      id: nextId(),
-      method: "initialize",
-      params: {
-        protocolVersion: "2025-03-26",
-        capabilities: {},
-        clientInfo: { name: "cookiy-cli", version: VERSION },
-      },
-    },
-    INIT_TIMEOUT,
-  );
-  if (!initResp) die("API initialize request failed");
-  checkAuthError(initResp);
-  if (checkRpcError(initResp)) die("API initialize error");
-
-  await postJsonRpc(
-    { jsonrpc: "2.0", method: "notifications/initialized" },
-    INIT_TIMEOUT,
-  ).catch(() => {});
-
-  _initialized = true;
-}
-
 export async function callTool(
   toolName: string,
   args: Record<string, unknown> = {},
 ): Promise<unknown> {
-  await ensureInitialized();
-  const callResp = await postJsonRpc({
+  const resp = await postJsonRpc({
     jsonrpc: "2.0",
     id: nextId(),
     method: "tools/call",
     params: { name: toolName, arguments: args },
   });
-  if (!callResp) die("API tools/call request failed");
-  checkAuthError(callResp);
-  if (checkRpcError(callResp)) process.exit(1);
-  const printable = emitToolResult(callResp);
+  if (!resp) die("API tools/call request failed");
+  checkAuthError(resp);
+  if (checkRpcError(resp)) process.exit(1);
+  const printable = emitToolResult(resp);
   checkAuthError(printable);
   return printable;
 }

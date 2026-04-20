@@ -1,11 +1,5 @@
 import { Command } from "commander";
-import {
-  invoke,
-  postJsonRpc,
-  checkRpcError,
-  checkAuthError,
-  emitToolResult,
-} from "../rpc.js";
+import { invoke } from "../rpc.js";
 import {
   parseIntOption,
   parseJsonArrayOption,
@@ -14,30 +8,14 @@ import {
   mergeRawJson,
 } from "../util.js";
 
-async function waitForReportThenLink(
-  studyId: string,
-  timeoutMs = 300_000,
-): Promise<boolean> {
-  const statusResp = await postJsonRpc({
-    jsonrpc: "2.0",
-    id: Date.now(),
-    method: "tools/call",
-    params: {
-      name: "cookiy_report_status",
-      arguments: { study_id: studyId, wait: true, timeout_ms: timeoutMs },
-    },
-  });
-  if (!statusResp || checkRpcError(statusResp)) return false;
-  checkAuthError(statusResp);
-  return invoke("cookiy_report_share_link_get", { study_id: studyId });
-}
-
 function finish(ok: boolean): never {
   process.exit(ok ? 0 : 1);
 }
 
 export function registerStudy(program: Command): void {
-  const study = program.command("study").description("Studies: list, create, status, guide, interview, report, upload");
+  const study = program
+    .command("study")
+    .description("Studies: list, create, status, guide, interview, report, upload");
 
   study
     .command("list")
@@ -69,25 +47,17 @@ export function registerStudy(program: Command): void {
       "JSON array, e.g. '[{\"s3_key\":\"...\"}]'",
       parseJsonArrayOption("attachments"),
     )
-    .option("--wait", "server-side wait_for_guide", false)
-    .option("--timeout-ms <n>", "wait timeout (ms)", parseIntOption("timeout-ms"))
     .option("--json <obj>", "extra JSON fields merged into request")
     .action(
       async (opts: {
         query: string;
         thinking?: string;
         attachments?: unknown[];
-        wait?: boolean;
-        timeoutMs?: number;
         json?: string;
       }) => {
         let payload: Record<string, unknown> = { query: opts.query };
         if (opts.thinking !== undefined) payload.thinking = opts.thinking;
         if (opts.attachments !== undefined) payload.attachments = opts.attachments;
-        if (opts.wait) {
-          payload.wait_for_guide = true;
-          if (opts.timeoutMs !== undefined) payload.timeout_ms = opts.timeoutMs;
-        }
         payload = mergeRawJson(payload, opts.json);
         finish(await invoke("cookiy_study_create", payload));
       },
@@ -222,55 +192,35 @@ export function registerStudy(program: Command): void {
       parseIntOption("persona-count"),
     )
     .option("--plain-text <s>", "persona / profile description")
-    .option("--wait", "server-side wait", false)
-    .option(
-      "--timeout-ms <n>",
-      "wait timeout (ms)",
-      parseIntOption("timeout-ms"),
-    )
     .action(
       async (opts: {
         studyId: string;
         personaCount?: number;
         plainText?: string;
-        wait?: boolean;
-        timeoutMs?: number;
       }) => {
         const args: Record<string, unknown> = { study_id: opts.studyId };
         if (opts.personaCount !== undefined) args.persona_count = opts.personaCount;
         if (opts.plainText !== undefined) args.plain_text = opts.plainText;
-        if (opts.wait) {
-          args.wait = true;
-          if (opts.timeoutMs !== undefined) args.timeout_ms = opts.timeoutMs;
-        }
         finish(await invoke("cookiy_simulated_interview_generate", args));
       },
     );
 
   // study report ...
-  const report = study.command("report").description("study report: generate | content | link | wait");
+  const report = study.command("report").description("study report: generate | content | link");
 
   report
     .command("generate")
     .description("generate report")
     .requiredOption("--study-id <uuid>", "study id")
     .option("--skip-synthetic-interview", "skip synthetic interview step", false)
-    .option("--wait", "wait for completion then emit share link", false)
     .action(
       async (opts: {
         studyId: string;
         skipSyntheticInterview?: boolean;
-        wait?: boolean;
       }) => {
         const args: Record<string, unknown> = { study_id: opts.studyId };
         if (opts.skipSyntheticInterview) args.skip_synthetic_interview = true;
-        if (opts.wait) {
-          const ok = await invoke("cookiy_report_generate", args);
-          if (!ok) finish(false);
-          finish(await waitForReportThenLink(opts.studyId));
-        } else {
-          finish(await invoke("cookiy_report_generate", args));
-        }
+        finish(await invoke("cookiy_report_generate", args));
       },
     );
 
@@ -278,38 +228,9 @@ export function registerStudy(program: Command): void {
     .command("content")
     .description("report content JSON")
     .requiredOption("--study-id <uuid>", "study id")
-    .option("--wait", "wait for completion first", false)
-    .option(
-      "--timeout-ms <n>",
-      "wait timeout (ms)",
-      parseIntOption("timeout-ms"),
-    )
-    .action(
-      async (opts: { studyId: string; wait?: boolean; timeoutMs?: number }) => {
-        const contentArgs: Record<string, unknown> = { study_id: opts.studyId };
-        if (opts.wait) {
-          const statusArgs: Record<string, unknown> = {
-            study_id: opts.studyId,
-            wait: true,
-          };
-          if (opts.timeoutMs !== undefined) statusArgs.timeout_ms = opts.timeoutMs;
-          const statusResp = await postJsonRpc({
-            jsonrpc: "2.0",
-            id: Date.now(),
-            method: "tools/call",
-            params: {
-              name: "cookiy_report_status",
-              arguments: statusArgs,
-            },
-          });
-          if (!statusResp || checkRpcError(statusResp)) process.exit(1);
-          checkAuthError(statusResp);
-          // Preserve legacy behavior: wait flag also flows into content_get.
-          contentArgs.wait = true;
-        }
-        finish(await invoke("cookiy_report_content_get", contentArgs));
-      },
-    );
+    .action(async (opts: { studyId: string }) => {
+      finish(await invoke("cookiy_report_content_get", { study_id: opts.studyId }));
+    });
 
   report
     .command("link")
@@ -317,18 +238,5 @@ export function registerStudy(program: Command): void {
     .requiredOption("--study-id <uuid>", "study id")
     .action(async (opts: { studyId: string }) => {
       finish(await invoke("cookiy_report_share_link_get", { study_id: opts.studyId }));
-    });
-
-  report
-    .command("wait")
-    .description("wait for report then emit share link")
-    .requiredOption("--study-id <uuid>", "study id")
-    .option(
-      "--timeout-ms <n>",
-      "wait timeout (ms, default 300000)",
-      parseIntOption("timeout-ms"),
-    )
-    .action(async (opts: { studyId: string; timeoutMs?: number }) => {
-      finish(await waitForReportThenLink(opts.studyId, opts.timeoutMs ?? 300_000));
     });
 }
