@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 
-export const VERSION = "1.21.2";
+export const VERSION = "1.21.3";
 export const DEFAULT_SERVER_URL = "https://s-api.cookiy.ai";
 export const API_RPC_TIMEOUT = parseInt(
   process.env.COOKIY_API_RPC_TIMEOUT || process.env.COOKIY_MCP_RPC_TIMEOUT || "600",

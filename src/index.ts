@@ -30,7 +30,7 @@ program
     "--token <path>",
     "Token file path (default ~/.cookiy/token.txt)",
   )
-  .showHelpAfterError()
+  .showHelpAfterError('(run "cookiy --help" for usage)')
   .addHelpText(
     "after",
     `
