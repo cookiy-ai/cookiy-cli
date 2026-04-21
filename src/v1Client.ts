@@ -15,7 +15,7 @@ export class V1RequestError extends Error {
 function buildUrl(path: string, query?: Record<string, unknown>): string {
   const base = resolveServerBase().replace(/\/$/, "");
   const rel = path.startsWith("/") ? path : `/${path}`;
-  const url = new URL(`${base}${rel}`);
+  const url = new URL(`${base}/api${rel}`);
   if (query) {
     for (const [k, v] of Object.entries(query)) {
       if (v === undefined || v === null) continue;
