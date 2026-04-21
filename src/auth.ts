@@ -30,45 +30,36 @@ export async function runSaveToken(input: string): Promise<void> {
   }
   if (!at) die("Could not find access_token in input.");
 
-  const apiEnd = `${resolveServerBase().replace(/\/$/, "")}/mcp`;
+  // Validate by pinging the cheapest authenticated v1 endpoint. Previously
+  // this used JSON-RPC `/mcp` with tools/call:cookiy_balance_get — now that
+  // the entire CLI is on v1 REST, keep one consistent transport.
+  const verifyUrl = `${resolveServerBase().replace(/\/$/, "")}/api/v1/billing/balance`;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), INIT_TIMEOUT * 1000);
 
   try {
-    const res = await fetch(apiEnd, {
-      method: "POST",
+    const res = await fetch(verifyUrl, {
+      method: "GET",
       headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json, text/event-stream",
+        Accept: "application/json",
         Authorization: `Bearer ${at}`,
       },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/call",
-        params: { name: "cookiy_balance_get", arguments: {} },
-      }),
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
 
     const http = res.status;
-    const body = await res.text();
-
-    if (http !== 200) {
+    if (http === 401 || http === 403) {
       die(
-        `Token verify HTTP ${http} — token may be invalid or expired. Sign in again at: ${resolveLoginUrl()}`,
+        `Token verify failed (HTTP ${http}) — token is invalid or expired. Sign in again at: ${resolveLoginUrl()}`,
       );
     }
-
-    try {
-      const parsed = JSON.parse(body) as { error?: unknown };
-      if (parsed.error) {
-        die(`Token verify error: ${JSON.stringify(parsed.error)}`);
-      }
-    } catch {
-      // body not JSON — still counted as success if HTTP 200
+    if (http < 200 || http >= 300) {
+      const body = await res.text().catch(() => "");
+      die(
+        `Token verify HTTP ${http} — unable to reach ${verifyUrl}${body ? `: ${body.slice(0, 200)}` : ""}`,
+      );
     }
   } catch (e: unknown) {
     clearTimeout(timeoutId);
