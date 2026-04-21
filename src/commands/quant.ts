@@ -1,10 +1,6 @@
 import { Command } from "commander";
-import { invoke, callTool } from "../rpc.js";
-import { parseJsonObjectOption, mergeRawJson } from "../util.js";
-
-function finish(ok: boolean): never {
-  process.exit(ok ? 0 : 1);
-}
+import { v1, runV1 } from "../v1Client.js";
+import { parseJsonObjectOption } from "../util.js";
 
 export function registerQuant(program: Command): void {
   const quant = program.command("quant").description(
@@ -15,7 +11,7 @@ export function registerQuant(program: Command): void {
     .command("list")
     .description("list surveys visible to operator")
     .action(async () => {
-      finish(await invoke("cookiy_quant_survey_list", {}));
+      await runV1(() => v1.get("/v1/quant/surveys"));
     });
 
   quant
@@ -27,21 +23,26 @@ export function registerQuant(program: Command): void {
       parseJsonObjectOption("json"),
     )
     .action(async (opts: { json: Record<string, unknown> }) => {
-      finish(await invoke("cookiy_quant_survey_create", opts.json));
+      await runV1(() => v1.post("/v1/quant/surveys", opts.json));
     });
 
   quant
     .command("get")
     .description("survey detail")
-    .requiredOption("--survey-id <id>", "numeric sid (sent as string)")
-    .action(async (opts: { surveyId: string }) => {
-      finish(await invoke("cookiy_quant_survey_detail", { survey_id: String(opts.surveyId) }));
+    .requiredOption("--survey-id <id>", "numeric sid")
+    .option("--language <lang>", "language code")
+    .action(async (opts: { surveyId: string; language?: string }) => {
+      const query: Record<string, unknown> = {};
+      if (opts.language) query.language = opts.language;
+      await runV1(() =>
+        v1.get(`/v1/quant/surveys/${encodeURIComponent(opts.surveyId)}`, query),
+      );
     });
 
   quant
     .command("update")
     .description("patch survey")
-    .requiredOption("--survey-id <id>", "numeric sid (sent as string)")
+    .requiredOption("--survey-id <id>", "numeric sid")
     .requiredOption(
       "--json <obj>",
       "JSON object with survey/groups/questions/quotas_*",
@@ -49,11 +50,12 @@ export function registerQuant(program: Command): void {
     )
     .action(
       async (opts: { surveyId: string; json: Record<string, unknown> }) => {
-        const payload = mergeRawJson(
-          { survey_id: String(opts.surveyId) },
-          JSON.stringify(opts.json),
+        await runV1(() =>
+          v1.patch(
+            `/v1/quant/surveys/${encodeURIComponent(opts.surveyId)}`,
+            opts.json,
+          ),
         );
-        finish(await invoke("cookiy_quant_survey_patch", payload));
       },
     );
 
@@ -62,7 +64,11 @@ export function registerQuant(program: Command): void {
     .description("combined survey + recruit status")
     .requiredOption("--survey-id <id>", "numeric sid")
     .action(async (opts: { surveyId: string }) => {
-      finish(await invoke("cookiy_quant_status", { survey_id: String(opts.surveyId) }));
+      await runV1(() =>
+        v1.get(
+          `/v1/quant/surveys/${encodeURIComponent(opts.surveyId)}/status`,
+        ),
+      );
     });
 
   quant
@@ -70,7 +76,11 @@ export function registerQuant(program: Command): void {
     .description("survey report (structured JSON + raw)")
     .requiredOption("--survey-id <id>", "numeric sid")
     .action(async (opts: { surveyId: string }) => {
-      finish(await invoke("cookiy_quant_survey_report", { survey_id: String(opts.surveyId) }));
+      await runV1(() =>
+        v1.get(
+          `/v1/quant/surveys/${encodeURIComponent(opts.surveyId)}/report`,
+        ),
+      );
     });
 
   quant
@@ -80,16 +90,19 @@ export function registerQuant(program: Command): void {
     .option("--include-incomplete", "include incomplete responses", false)
     .action(
       async (opts: { surveyId: string; includeIncomplete?: boolean }) => {
-        const args: Record<string, unknown> = { survey_id: String(opts.surveyId) };
-        if (opts.includeIncomplete) args.include_incomplete = true;
-        const result = (await callTool(
-          "cookiy_quant_survey_raw_responses",
-          args,
-        )) as { raw_results?: { raw?: string } } | null;
-        if (result?.raw_results?.raw) {
-          console.log(result.raw_results.raw);
-        }
-        process.exit(0);
+        const query: Record<string, unknown> = {};
+        if (!opts.includeIncomplete) query.only_completed = "true";
+        await runV1(async () => {
+          const r = (await v1.get(
+            `/v1/quant/surveys/${encodeURIComponent(opts.surveyId)}/raw-responses`,
+            query,
+          )) as { csv?: string } | null;
+          if (r?.csv) {
+            console.log(r.csv);
+            return undefined;
+          }
+          return r;
+        });
       },
     );
 }
