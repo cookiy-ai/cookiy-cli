@@ -95,6 +95,40 @@ export function registerStudy(program: Command): void {
     });
 
   guide
+    .command("wait")
+    .description("poll until guide generation completes or timeout")
+    .requiredOption("--study-id <uuid>", "study id")
+    .option(
+      "--timeout-ms <n>",
+      "polling timeout in ms (default 120000)",
+      parseIntOption("timeout-ms"),
+      120000,
+    )
+    .action(async (opts: { studyId: string; timeoutMs: number }) => {
+      await runV1(async () => {
+        const deadline = Date.now() + opts.timeoutMs;
+        const sid = encodeURIComponent(opts.studyId);
+        let guideObj: unknown = {};
+        while (true) {
+          const activity = (await v1.get(`/v1/studies/${sid}/activity`)) as
+            | { sources?: { guide?: unknown } }
+            | null;
+          guideObj = activity?.sources?.guide ?? {};
+          const status =
+            (guideObj as { status?: string } | null)?.status ?? "";
+          if (status !== "guide_generation_in_progress") return guideObj;
+          if (Date.now() >= deadline) {
+            console.log(JSON.stringify(guideObj, null, 2));
+            throw new Error(
+              `Timeout waiting for guide generation (${opts.timeoutMs}ms)`,
+            );
+          }
+          await new Promise((r) => setTimeout(r, 15000));
+        }
+      });
+    });
+
+  guide
     .command("update")
     .description("apply patch to discussion guide")
     .requiredOption("--study-id <uuid>", "study id")
@@ -263,5 +297,38 @@ export function registerStudy(program: Command): void {
           {},
         ),
       );
+    });
+
+  report
+    .command("wait")
+    .description(
+      "poll until report generation completes, then print share link",
+    )
+    .requiredOption("--study-id <uuid>", "study id")
+    .option(
+      "--timeout-ms <n>",
+      "polling timeout in ms (default 300000)",
+      parseIntOption("timeout-ms"),
+      300000,
+    )
+    .action(async (opts: { studyId: string; timeoutMs: number }) => {
+      await runV1(async () => {
+        const deadline = Date.now() + opts.timeoutMs;
+        const sid = encodeURIComponent(opts.studyId);
+        while (true) {
+          const activity = (await v1.get(`/v1/studies/${sid}/activity`)) as
+            | { sources?: { report?: { status?: string } } }
+            | null;
+          const status = activity?.sources?.report?.status ?? "";
+          if (status !== "report_generation_in_progress") break;
+          if (Date.now() >= deadline) {
+            throw new Error(
+              `Timeout waiting for report generation (${opts.timeoutMs}ms)`,
+            );
+          }
+          await new Promise((r) => setTimeout(r, 15000));
+        }
+        return await v1.post(`/v1/studies/${sid}/report/share-link`, {});
+      });
     });
 }
