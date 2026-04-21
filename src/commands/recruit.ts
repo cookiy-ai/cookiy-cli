@@ -1,10 +1,6 @@
 import { Command } from "commander";
-import { invoke } from "../rpc.js";
+import { v1, runV1 } from "../v1Client.js";
 import { parseIntOption, die } from "../util.js";
-
-function finish(ok: boolean): never {
-  process.exit(ok ? 0 : 1);
-}
 
 export function registerRecruit(program: Command): void {
   const recruit = program
@@ -15,7 +11,10 @@ export function registerRecruit(program: Command): void {
     .command("start")
     .description("launch recruitment (or incrementally add participants)")
     .option("--study-id <uuid>", "study id (required for interview studies)")
-    .option("--survey-public-url <url>", "public survey URL (auto-selects quant mode)")
+    .option(
+      "--survey-public-url <url>",
+      "public survey URL (auto-selects quant mode)",
+    )
     .option("--confirmation-token <s>", "step-2 confirmation token")
     .option("--plain-text <s>", "audience description / free-text brief")
     .option(
@@ -31,23 +30,35 @@ export function registerRecruit(program: Command): void {
         plainText?: string;
         incrementalParticipants?: number;
       }) => {
-        // Step 1 (preview) requires --plain-text; step 2 only needs --confirmation-token
         if (!opts.confirmationToken && !opts.plainText) {
           die("recruit start: --plain-text is required");
         }
 
-        const args: Record<string, unknown> = { force_reconfigure: true };
-        if (opts.studyId) args.study_id = opts.studyId;
-        if (opts.surveyPublicUrl) {
-          args.survey_public_url = opts.surveyPublicUrl;
-          args.recruit_mode = "quant_survey";
+        const isStudyBased = !!opts.studyId;
+        const isQuantOnly = !isStudyBased && !!opts.surveyPublicUrl;
+        if (!isStudyBased && !isQuantOnly) {
+          die(
+            "recruit start: either --study-id or --survey-public-url is required",
+          );
         }
-        if (opts.confirmationToken) args.confirmation_token = opts.confirmationToken;
-        if (opts.plainText !== undefined) args.plain_text = opts.plainText;
+
+        const body: Record<string, unknown> = { force_reconfigure: true };
+        if (opts.confirmationToken) body.confirmation_token = opts.confirmationToken;
+        if (opts.plainText !== undefined) body.plain_text = opts.plainText;
         if (opts.incrementalParticipants !== undefined) {
-          args.incremental_participants = opts.incrementalParticipants;
+          body.incremental_participants = opts.incrementalParticipants;
         }
-        finish(await invoke("cookiy_recruit_create", args));
+
+        const step = opts.confirmationToken ? "confirm" : "preview";
+        let path: string;
+        if (isStudyBased) {
+          path = `/v1/studies/${encodeURIComponent(opts.studyId as string)}/recruit/${step}`;
+        } else {
+          body.survey_public_url = opts.surveyPublicUrl;
+          path = `/v1/quant/recruit/${step}`;
+        }
+
+        await runV1(() => v1.post(path, body));
       },
     );
 }
