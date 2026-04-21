@@ -15,14 +15,12 @@ export const INIT_TIMEOUT = 120;
 export interface Runtime {
   tokenPath: string;
   accessToken: string;
-  apiEndpoint: string;
 }
 
 export const runtime: Runtime = {
   tokenPath:
     process.env.COOKIY_CREDENTIALS || path.join(os.homedir(), ".cookiy", "token.txt"),
   accessToken: "",
-  apiEndpoint: "",
 };
 
 export function resolveServerBase(): string {
@@ -34,8 +32,4 @@ export function resolveServerBase(): string {
 
 export function resolveLoginUrl(): string {
   return `${resolveServerBase()}/oauth/cli/start`;
-}
-
-export function resolveApiEndpoint(): void {
-  runtime.apiEndpoint = `${resolveServerBase().replace(/\/$/, "")}/mcp`;
 }

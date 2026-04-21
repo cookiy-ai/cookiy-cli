@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { runtime, resolveApiEndpoint, VERSION } from "./config.js";
+import { runtime, VERSION } from "./config.js";
 import { loadCredentials, runSaveToken } from "./auth.js";
 import { scheduleBackgroundUpdate } from "./update-check.js";
 import { registerStudy } from "./commands/study.js";
@@ -44,7 +44,6 @@ program.hook("preAction", (_thisCmd, actionCmd) => {
 
   if (actionCmd.name() === "save-token") return;
 
-  resolveApiEndpoint();
   loadCredentials();
 });
 
