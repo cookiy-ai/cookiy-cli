@@ -30,9 +30,6 @@ export async function runSaveToken(input: string): Promise<void> {
   }
   if (!at) die("Could not find access_token in input.");
 
-  // Validate by pinging the cheapest authenticated v1 endpoint. Previously
-  // this used JSON-RPC `/mcp` with tools/call:cookiy_balance_get — now that
-  // the entire CLI is on v1 REST, keep one consistent transport.
   const verifyUrl = `${resolveServerBase().replace(/\/$/, "")}/api/v1/billing/balance`;
 
   const controller = new AbortController();
