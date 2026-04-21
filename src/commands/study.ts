@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { invoke } from "../rpc.js";
+import { v1, runV1 } from "../v1Client.js";
 import {
   parseIntOption,
   parseJsonArrayOption,
@@ -7,10 +7,6 @@ import {
   die,
   mergeRawJson,
 } from "../util.js";
-
-function finish(ok: boolean): never {
-  process.exit(ok ? 0 : 1);
-}
 
 export function registerStudy(program: Command): void {
   const study = program
@@ -23,10 +19,10 @@ export function registerStudy(program: Command): void {
     .option("--limit <n>", "max items", parseIntOption("limit"))
     .option("--cursor <s>", "pagination cursor")
     .action(async (opts: { limit?: number; cursor?: string }) => {
-      const args: Record<string, unknown> = {};
-      if (opts.limit !== undefined) args.limit = opts.limit;
-      if (opts.cursor) args.cursor = opts.cursor;
-      finish(await invoke("cookiy_study_list", args));
+      const query: Record<string, unknown> = {};
+      if (opts.limit !== undefined) query.limit = opts.limit;
+      if (opts.cursor) query.cursor = opts.cursor;
+      await runV1(() => v1.get("/v1/studies", query));
     });
 
   study
@@ -34,7 +30,9 @@ export function registerStudy(program: Command): void {
     .description("study record and activity")
     .requiredOption("--study-id <uuid>", "study id")
     .action(async (opts: { studyId: string }) => {
-      finish(await invoke("cookiy_activity_get", { study_id: opts.studyId }));
+      await runV1(() =>
+        v1.get(`/v1/studies/${encodeURIComponent(opts.studyId)}/activity`),
+      );
     });
 
   study
@@ -59,7 +57,7 @@ export function registerStudy(program: Command): void {
         if (opts.thinking !== undefined) payload.thinking = opts.thinking;
         if (opts.attachments !== undefined) payload.attachments = opts.attachments;
         payload = mergeRawJson(payload, opts.json);
-        finish(await invoke("cookiy_study_create", payload));
+        await runV1(() => v1.post("/v1/studies", payload));
       },
     );
 
@@ -74,10 +72,10 @@ export function registerStudy(program: Command): void {
         if (!opts.imageData && !opts.imageUrl) {
           die("study upload requires --image-data or --image-url");
         }
-        const args: Record<string, unknown> = { content_type: opts.contentType };
-        if (opts.imageData) args.image_data = opts.imageData;
-        if (opts.imageUrl) args.image_url = opts.imageUrl;
-        finish(await invoke("cookiy_media_upload", args));
+        const body: Record<string, unknown> = { content_type: opts.contentType };
+        if (opts.imageData) body.image_data = opts.imageData;
+        if (opts.imageUrl) body.image_url = opts.imageUrl;
+        await runV1(() => v1.post("/v1/studies/media/upload", body));
       },
     );
 
@@ -89,7 +87,11 @@ export function registerStudy(program: Command): void {
     .description("get discussion guide")
     .requiredOption("--study-id <uuid>", "study id")
     .action(async (opts: { studyId: string }) => {
-      finish(await invoke("cookiy_guide_get", { study_id: opts.studyId }));
+      await runV1(() =>
+        v1.get(
+          `/v1/studies/${encodeURIComponent(opts.studyId)}/discussion-guide`,
+        ),
+      );
     });
 
   guide
@@ -112,14 +114,19 @@ export function registerStudy(program: Command): void {
         changeMessage?: string;
         json: Record<string, unknown>;
       }) => {
-        const args: Record<string, unknown> = {
-          study_id: opts.studyId,
+        const body: Record<string, unknown> = {
           base_revision: opts.baseRevision,
           idempotency_key: opts.idempotencyKey,
           patch: opts.json,
         };
-        if (opts.changeMessage !== undefined) args.change_message = opts.changeMessage;
-        finish(await invoke("cookiy_guide_patch", args));
+        if (opts.changeMessage !== undefined)
+          body.change_message = opts.changeMessage;
+        await runV1(() =>
+          v1.patch(
+            `/v1/studies/${encodeURIComponent(opts.studyId)}/discussion-guide`,
+            body,
+          ),
+        );
       },
     );
 
@@ -132,12 +139,14 @@ export function registerStudy(program: Command): void {
     .requiredOption("--study-id <uuid>", "study id")
     .option("--cursor <s>", "pagination cursor")
     .action(async (opts: { studyId: string; cursor?: string }) => {
-      const args: Record<string, unknown> = {
-        study_id: opts.studyId,
-        include_simulation: true,
-      };
-      if (opts.cursor) args.cursor = opts.cursor;
-      finish(await invoke("cookiy_interview_list", args));
+      const query: Record<string, unknown> = { include_simulation: "true" };
+      if (opts.cursor) query.cursor = opts.cursor;
+      await runV1(() =>
+        v1.get(
+          `/v1/studies/${encodeURIComponent(opts.studyId)}/interviews`,
+          query,
+        ),
+      );
     });
 
   const playback = interview
@@ -148,14 +157,14 @@ export function registerStudy(program: Command): void {
     .command("url")
     .description("playback recording URL")
     .requiredOption("--study-id <uuid>", "study id")
-    .option("--interview-id <uuid>", "specific interview")
-    .option("--cursor <s>", "pagination cursor")
+    .requiredOption("--interview-id <uuid>", "specific interview")
     .action(
-      async (opts: { studyId: string; interviewId?: string; cursor?: string }) => {
-        const args: Record<string, unknown> = { study_id: opts.studyId, view: "url" };
-        if (opts.interviewId) args.interview_id = opts.interviewId;
-        if (opts.cursor) args.cursor = opts.cursor;
-        finish(await invoke("cookiy_interview_playback_get", args));
+      async (opts: { studyId: string; interviewId: string }) => {
+        await runV1(() =>
+          v1.get(
+            `/v1/studies/${encodeURIComponent(opts.studyId)}/interviews/${encodeURIComponent(opts.interviewId)}/playback`,
+          ),
+        );
       },
     );
 
@@ -163,17 +172,14 @@ export function registerStudy(program: Command): void {
     .command("content")
     .description("playback transcript content")
     .requiredOption("--study-id <uuid>", "study id")
-    .option("--interview-id <uuid>", "specific interview")
-    .option("--cursor <s>", "pagination cursor")
+    .requiredOption("--interview-id <uuid>", "specific interview")
     .action(
-      async (opts: { studyId: string; interviewId?: string; cursor?: string }) => {
-        const args: Record<string, unknown> = {
-          study_id: opts.studyId,
-          view: "transcript",
-        };
-        if (opts.interviewId) args.interview_id = opts.interviewId;
-        if (opts.cursor) args.cursor = opts.cursor;
-        finish(await invoke("cookiy_interview_playback_get", args));
+      async (opts: { studyId: string; interviewId: string }) => {
+        await runV1(() =>
+          v1.get(
+            `/v1/studies/${encodeURIComponent(opts.studyId)}/interviews/${encodeURIComponent(opts.interviewId)}/transcript`,
+          ),
+        );
       },
     );
 
@@ -198,10 +204,15 @@ export function registerStudy(program: Command): void {
         personaCount?: number;
         plainText?: string;
       }) => {
-        const args: Record<string, unknown> = { study_id: opts.studyId };
-        if (opts.personaCount !== undefined) args.persona_count = opts.personaCount;
-        if (opts.plainText !== undefined) args.plain_text = opts.plainText;
-        finish(await invoke("cookiy_simulated_interview_generate", args));
+        const body: Record<string, unknown> = {};
+        if (opts.personaCount !== undefined) body.persona_count = opts.personaCount;
+        if (opts.plainText !== undefined) body.plain_text = opts.plainText;
+        await runV1(() =>
+          v1.post(
+            `/v1/studies/${encodeURIComponent(opts.studyId)}/fake-interview`,
+            body,
+          ),
+        );
       },
     );
 
@@ -218,9 +229,14 @@ export function registerStudy(program: Command): void {
         studyId: string;
         skipSyntheticInterview?: boolean;
       }) => {
-        const args: Record<string, unknown> = { study_id: opts.studyId };
-        if (opts.skipSyntheticInterview) args.skip_synthetic_interview = true;
-        finish(await invoke("cookiy_report_generate", args));
+        const body: Record<string, unknown> = {};
+        if (opts.skipSyntheticInterview) body.skip_synthetic_interview = true;
+        await runV1(() =>
+          v1.post(
+            `/v1/studies/${encodeURIComponent(opts.studyId)}/report/generate`,
+            body,
+          ),
+        );
       },
     );
 
@@ -229,7 +245,11 @@ export function registerStudy(program: Command): void {
     .description("report content JSON")
     .requiredOption("--study-id <uuid>", "study id")
     .action(async (opts: { studyId: string }) => {
-      finish(await invoke("cookiy_report_content_get", { study_id: opts.studyId }));
+      await runV1(() =>
+        v1.get(
+          `/v1/studies/${encodeURIComponent(opts.studyId)}/report/content`,
+        ),
+      );
     });
 
   report
@@ -237,6 +257,11 @@ export function registerStudy(program: Command): void {
     .description("report share link")
     .requiredOption("--study-id <uuid>", "study id")
     .action(async (opts: { studyId: string }) => {
-      finish(await invoke("cookiy_report_share_link_get", { study_id: opts.studyId }));
+      await runV1(() =>
+        v1.post(
+          `/v1/studies/${encodeURIComponent(opts.studyId)}/report/share-link`,
+          {},
+        ),
+      );
     });
 }

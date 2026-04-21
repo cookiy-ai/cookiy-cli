@@ -1,10 +1,6 @@
 import { Command } from "commander";
-import { invoke } from "../rpc.js";
+import { v1, runV1 } from "../v1Client.js";
 import { parseIntOption } from "../util.js";
-
-function finish(ok: boolean): never {
-  process.exit(ok ? 0 : 1);
-}
 
 export function registerBilling(program: Command): void {
   const billing = program
@@ -15,7 +11,7 @@ export function registerBilling(program: Command): void {
     .command("balance")
     .description("one-line balance summary")
     .action(async () => {
-      finish(await invoke("cookiy_balance_get", {}));
+      await runV1(() => v1.get("/v1/billing/balance"));
     });
 
   billing
@@ -27,14 +23,18 @@ export function registerBilling(program: Command): void {
       parseIntOption("amount-usd-cents"),
     )
     .action(async (opts: { amountUsdCents: number }) => {
-      finish(await invoke("cookiy_billing_cash_checkout", { amount_cents: opts.amountUsdCents }));
+      await runV1(() =>
+        v1.post("/v1/billing/cash-credit/checkout", {
+          amount_cents: opts.amountUsdCents,
+        }),
+      );
     });
 
   billing
     .command("price-table")
     .description("current pricing table")
     .action(async () => {
-      finish(await invoke("cookiy_billing_price_table", {}));
+      await runV1(() => v1.get("/v1/billing/price-table"));
     });
 
   billing
@@ -51,12 +51,12 @@ export function registerBilling(program: Command): void {
         studyId?: string;
         surveyId?: string;
       }) => {
-        const args: Record<string, unknown> = {};
-        if (opts.limit !== undefined) args.limit = opts.limit;
-        if (opts.cursor) args.cursor = opts.cursor;
-        if (opts.studyId) args.study_id = opts.studyId;
-        if (opts.surveyId !== undefined) args.survey_id = String(opts.surveyId);
-        finish(await invoke("cookiy_billing_transactions", args));
+        const query: Record<string, unknown> = {};
+        if (opts.limit !== undefined) query.limit = opts.limit;
+        if (opts.cursor) query.cursor = opts.cursor;
+        if (opts.studyId) query.study_id = opts.studyId;
+        if (opts.surveyId !== undefined) query.survey_id = String(opts.surveyId);
+        await runV1(() => v1.get("/v1/billing/transactions", query));
       },
     );
 }
