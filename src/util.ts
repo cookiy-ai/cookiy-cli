@@ -5,9 +5,8 @@ export function die(msg: string, code = 1): never {
   process.exit(code);
 }
 
-export function dieNoAccess(detail?: string): never {
-  const head = `Access denied — token is missing or expired.\nSign in:  ${resolveLoginUrl()}`;
-  die(detail ? `${head}\n${detail}` : head);
+export function dieNoAccess(_detail?: string): never {
+  die(`Access denied — token is missing or expired.\nSign in:  ${resolveLoginUrl()}`);
 }
 
 export function parseBool(val: string): boolean {
