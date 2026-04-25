@@ -56,7 +56,7 @@ async function request(
   const timeoutSec = opts?.timeoutSec ?? API_RPC_TIMEOUT;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutSec * 1000);
-  const where = `${method} ${url}`;
+  // const where = `${method} ${url}`;
 
   try {
     const headers: Record<string, string> = {
@@ -94,8 +94,8 @@ async function request(
         parsed && typeof parsed === "object"
           ? (parsed as { message?: unknown }).message
           : undefined;
-      const head = `[HTTP ${res.status}] ${where}`;
-      const msg = serverMessage ? `${head} — ${String(serverMessage)}` : head;
+      const head = `[HTTP ${res.status}]`; // ` ${where}`
+      const msg = serverMessage ? `${head} ${String(serverMessage)}` : head;
       throw new V1RequestError(res.status, msg, parsed, bodyDisplay ?? undefined);
     }
 
@@ -105,9 +105,9 @@ async function request(
     if (e instanceof V1RequestError) throw e;
     const err = e as { name?: string; message?: string };
     if (err.name === "AbortError") {
-      die(`[timeout ${timeoutSec}s] ${where}`);
+      die(`[timeout ${timeoutSec}s]`); // ` ${where}`
     }
-    die(`[fetch error] ${where} — ${err.message ?? String(e)}`);
+    die(`[fetch error] ${err.message ?? String(e)}`); // ` ${where} —`
   }
 }
 
