@@ -1,5 +1,5 @@
 import { runtime, resolveServerBase, API_RPC_TIMEOUT } from "./config.js";
-import { die } from "./util.js";
+import { die, dieNoAccess } from "./util.js";
 
 export class V1RequestError extends Error {
   constructor(
@@ -99,6 +99,10 @@ async function request(
     }
 
     const bodyDisplay = formatBody(parsed, text);
+
+    if (res.status === 401) {
+      dieNoAccess(bodyDisplay ?? undefined);
+    }
 
     if (res.status < 200 || res.status >= 300) {
       const serverMessage =
