@@ -6,10 +6,28 @@ export class V1RequestError extends Error {
     public readonly status: number,
     message: string,
     public readonly body?: unknown,
+    public readonly details?: string,
   ) {
     super(message);
     this.name = "V1RequestError";
   }
+}
+
+const MAX_BODY_LEN = 2000;
+
+function truncate(s: string): string {
+  if (s.length <= MAX_BODY_LEN) return s;
+  const dropped = s.length - MAX_BODY_LEN;
+  return `${s.slice(0, MAX_BODY_LEN)}\n… (truncated, ${dropped} more chars)`;
+}
+
+function formatBody(parsed: unknown, text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  if (parsed && typeof parsed === "object") {
+    return truncate(JSON.stringify(parsed, null, 2));
+  }
+  return truncate(trimmed);
 }
 
 function buildUrl(path: string, query?: Record<string, unknown>): string {
@@ -38,15 +56,18 @@ async function request(
   const timeoutSec = opts?.timeoutSec ?? API_RPC_TIMEOUT;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutSec * 1000);
+  const where = `${method} ${url}`;
 
   try {
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      Authorization: `Bearer ${runtime.accessToken}`,
+    };
+    if (opts?.body !== undefined) headers["Content-Type"] = "application/json";
+
     const res = await fetch(url, {
       method,
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        Authorization: `Bearer ${runtime.accessToken}`,
-      },
+      headers,
       body: opts?.body !== undefined ? JSON.stringify(opts.body) : undefined,
       signal: controller.signal,
     });
@@ -62,15 +83,20 @@ async function request(
       }
     }
 
-    if (res.status === 401) dieNoAccess();
+    const bodyDisplay = formatBody(parsed, text);
+
+    if (res.status === 401) {
+      dieNoAccess(bodyDisplay ?? undefined);
+    }
 
     if (res.status < 200 || res.status >= 300) {
-      const msg =
-        (parsed && typeof parsed === "object" &&
-          (parsed as { message?: unknown }).message)
-          ? String((parsed as { message?: unknown }).message)
-          : `HTTP ${res.status}`;
-      throw new V1RequestError(res.status, msg, parsed);
+      const serverMessage =
+        parsed && typeof parsed === "object"
+          ? (parsed as { message?: unknown }).message
+          : undefined;
+      const head = `[HTTP ${res.status}] ${where}`;
+      const msg = serverMessage ? `${head} — ${String(serverMessage)}` : head;
+      throw new V1RequestError(res.status, msg, parsed, bodyDisplay ?? undefined);
     }
 
     return parsed;
@@ -79,9 +105,9 @@ async function request(
     if (e instanceof V1RequestError) throw e;
     const err = e as { name?: string; message?: string };
     if (err.name === "AbortError") {
-      die(`Request timeout (${timeoutSec}s)`);
+      die(`[timeout ${timeoutSec}s] ${where}`);
     }
-    die(`fetch: ${err.message ?? String(e)}`);
+    die(`[fetch error] ${where} — ${err.message ?? String(e)}`);
   }
 }
 
@@ -107,14 +133,7 @@ export async function runV1(
   } catch (e: unknown) {
     if (e instanceof V1RequestError) {
       console.error(e.message);
-      if (e.body && typeof e.body === "object") {
-        const detail = (e.body as { data?: unknown }).data;
-        if (detail) {
-          console.error(
-            typeof detail === "string" ? detail : JSON.stringify(detail, null, 2),
-          );
-        }
-      }
+      if (e.details) console.error(e.details);
       process.exit(1);
     }
     console.error((e as Error).message ?? String(e));
