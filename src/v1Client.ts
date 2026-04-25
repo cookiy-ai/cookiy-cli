@@ -13,7 +13,7 @@ export class V1RequestError extends Error {
   }
 }
 
-const MAX_BODY_LEN = 2000;
+const MAX_BODY_LEN = 500;
 
 function truncate(s: string): string {
   if (s.length <= MAX_BODY_LEN) return s;
