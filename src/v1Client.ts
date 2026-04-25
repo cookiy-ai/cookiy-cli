@@ -21,11 +21,22 @@ function truncate(s: string): string {
   return `${s.slice(0, MAX_BODY_LEN)}\n… (truncated, ${dropped} more chars)`;
 }
 
+function summarizeHtml(s: string): string | null {
+  const title = s.match(/<title[^>]*>\s*([^<]+?)\s*<\/title>/i)?.[1];
+  const h1 = s.match(/<h1[^>]*>\s*([^<]+?)\s*<\/h1>/i)?.[1];
+  const summary = (title ?? h1)?.trim();
+  if (summary) return `(HTML body) ${summary}`;
+  return `(HTML body, ${s.length} chars suppressed)`;
+}
+
 function formatBody(parsed: unknown, text: string): string | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
   if (parsed && typeof parsed === "object") {
     return truncate(JSON.stringify(parsed, null, 2));
+  }
+  if (/^\s*<(!doctype|html\b|head\b|body\b)/i.test(trimmed)) {
+    return summarizeHtml(trimmed);
   }
   return truncate(trimmed);
 }
@@ -55,7 +66,11 @@ async function request(
   const url = buildUrl(path, opts?.query);
   const timeoutSec = opts?.timeoutSec ?? API_RPC_TIMEOUT;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutSec * 1000);
+  let timedOut = false;
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutSec * 1000);
   // const where = `${method} ${url}`;
 
   try {
@@ -103,11 +118,16 @@ async function request(
   } catch (e: unknown) {
     clearTimeout(timeoutId);
     if (e instanceof V1RequestError) throw e;
-    const err = e as { name?: string; message?: string };
-    if (err.name === "AbortError") {
+    if (timedOut) {
       die(`[timeout ${timeoutSec}s]`); // ` ${where}`
     }
-    die(`[fetch error] ${err.message ?? String(e)}`); // ` ${where} —`
+    const err = e as {
+      message?: string;
+      cause?: { code?: string; message?: string };
+    };
+    const reason =
+      err.cause?.code ?? err.cause?.message ?? err.message ?? String(e);
+    die(`[fetch error] ${reason}`); // ` ${where} —`
   }
 }
 

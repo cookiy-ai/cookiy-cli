@@ -25,9 +25,14 @@ export async function runSaveToken(input: string): Promise<void> {
   }
   if (!at) die("Could not find access_token in input.");
 
-  const dir = path.dirname(runtime.tokenPath);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(runtime.tokenPath, at, { mode: 0o600 });
+  try {
+    const dir = path.dirname(runtime.tokenPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(runtime.tokenPath, at, { mode: 0o600 });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    die(`[save-token] failed to write ${runtime.tokenPath}: ${msg}`);
+  }
 
   console.error(`Token saved to ${runtime.tokenPath}`);
 }
