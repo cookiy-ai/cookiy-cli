@@ -62,7 +62,7 @@ async function request(
       }
     }
 
-    if (res.status === 401 || res.status === 403) dieNoAccess();
+    if (res.status === 401) dieNoAccess();
 
     if (res.status < 200 || res.status >= 300) {
       const msg =
