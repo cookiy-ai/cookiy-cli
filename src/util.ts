@@ -5,7 +5,7 @@ export function die(msg: string, code = 1): never {
   process.exit(code);
 }
 
-export function dieNoAccess(): never {
+export function dieNoAccess(_detail?: string): never {
   die(`Access denied — token is missing or expired.\nSign in:  ${resolveLoginUrl()}`);
 }
 
