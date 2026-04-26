@@ -1,76 +1,83 @@
-import { vi, type MockInstance } from "vitest";
+import { execFileSync, spawn } from "node:child_process";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import http from "node:http";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-export class ExitError extends Error {
-  constructor(public readonly code: number) {
-    super(`process.exit(${code})`);
-    this.name = "ExitError";
-  }
-}
+export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+export const DIST = join(ROOT, "dist", "index.js");
 
-export interface TestHarness {
-  exitSpy: MockInstance;
-  errSpy: MockInstance;
-  outSpy: MockInstance;
-  /** All stderr captured up until the first process.exit call (matches production behavior). */
-  stderr: () => string;
-  /** Full stderr captured for the duration of the test (post-exit noise included). */
-  stderrAll: () => string;
-  stdout: () => string;
-  exitCode: () => number | undefined;
-}
-
-export function setupHarness(): TestHarness {
-  const errChunks: string[] = [];
-  const outChunks: string[] = [];
-  let stderrAtFirstExit: string | null = null;
-
-  const exitSpy = vi
-    .spyOn(process, "exit")
-    .mockImplementation(((code?: number) => {
-      if (stderrAtFirstExit === null) {
-        stderrAtFirstExit = errChunks.join("\n");
-      }
-      throw new ExitError(code ?? 0);
-    }) as never);
-
-  const errSpy = vi
-    .spyOn(console, "error")
-    .mockImplementation((...args: unknown[]) => {
-      errChunks.push(args.map(String).join(" "));
-    });
-
-  const outSpy = vi
-    .spyOn(console, "log")
-    .mockImplementation((...args: unknown[]) => {
-      outChunks.push(args.map(String).join(" "));
-    });
-
-  return {
-    exitSpy,
-    errSpy,
-    outSpy,
-    stderr: () => stderrAtFirstExit ?? errChunks.join("\n"),
-    stderrAll: () => errChunks.join("\n"),
-    stdout: () => outChunks.join("\n"),
-    exitCode: () => {
-      const lastCall = exitSpy.mock.calls.at(-1);
-      return lastCall ? (lastCall[0] as number | undefined) : undefined;
-    },
-  };
+export interface CliResult {
+  stdout: string;
+  stderr: string;
+  code: number | null;
+  signal: NodeJS.Signals | null;
 }
 
 /**
- * Run a function expected to call process.exit. Returns the captured exit code,
- * or throws if the function exited normally without calling process.exit.
+ * Spawns the built CLI as a subprocess and resolves with stdout/stderr/exit
+ * code. Async (not spawnSync) on purpose: tests run a mock HTTP server in the
+ * same Node process, and spawnSync would block the parent event loop, freezing
+ * the mock server's accept() loop and making the CLI subprocess hang.
  */
-export async function expectExit(
-  fn: () => unknown | Promise<unknown>,
-): Promise<number> {
-  try {
-    await fn();
-  } catch (e) {
-    if (e instanceof ExitError) return e.code;
-    throw e;
+export function runCli(
+  args: string[],
+  env?: Record<string, string>,
+): Promise<CliResult> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [DIST, ...args], {
+      cwd: ROOT,
+      env: { ...process.env, ...(env ?? {}) },
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d: Buffer) => {
+      stdout += d.toString("utf8");
+    });
+    child.stderr.on("data", (d: Buffer) => {
+      stderr += d.toString("utf8");
+    });
+    child.on("exit", (code, signal) => {
+      resolve({ stdout, stderr, code, signal });
+    });
+  });
+}
+
+export function ensureBuilt(): void {
+  if (!existsSync(DIST)) {
+    execFileSync("npm", ["run", "build"], { cwd: ROOT, stdio: "inherit" });
   }
-  throw new Error("Expected process.exit to be called, but function returned normally");
+}
+
+export function makeTmpDir(prefix = "cookiy-e2e-"): string {
+  return mkdtempSync(join(tmpdir(), prefix));
+}
+
+export function rmDir(p: string): void {
+  rmSync(p, { recursive: true, force: true });
+}
+
+export interface MockServer {
+  url: string;
+  close: () => Promise<void>;
+}
+
+export async function startMockServer(
+  handler: (req: http.IncomingMessage, res: http.ServerResponse) => void,
+): Promise<MockServer> {
+  const server = http.createServer(handler);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const addr = server.address();
+  if (!addr || typeof addr === "string") {
+    throw new Error("Mock server failed to bind");
+  }
+  return {
+    url: `http://127.0.0.1:${addr.port}`,
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.closeAllConnections?.();
+        server.close(() => resolve());
+      }),
+  };
 }
