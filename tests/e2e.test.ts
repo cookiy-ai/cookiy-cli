@@ -34,7 +34,7 @@ function tmpToken(content: string): string {
   return p;
 }
 
-describe("E2E — Token file issues (T1–T3)", () => {
+describe("E2E — Token file issues (T1–T3) [no network]", () => {
   it("T1: token file does not exist → auth banner, exit 1", async () => {
     const tokenPath = path.join(newTmpDir(), "no-such-token.txt");
 
@@ -81,23 +81,57 @@ describe("E2E — Token file issues (T1–T3)", () => {
   });
 });
 
-describe("E2E — HTTP 401 from mock server (T4–T5)", () => {
+describe("E2E — HTTP 401 from real s-api.cookiy.ai (T4–T5) [real network]", () => {
+  // These tests hit the real production API with a fake token. The server
+  // reliably returns 401 with error_code=UNAUTHORIZED, which exercises the
+  // CLI's dieNoAccess() path. Network-dependent.
+
+  it("T4: invalid token, billing balance → 401 path, exit 1", async () => {
+    const tokenPath = tmpToken("fake-invalid-token-xyz");
+
+    const { stderr, code } = await runCli([
+      "--token",
+      tokenPath,
+      "billing",
+      "balance",
+    ]);
+
+    expect(code).toBe(1);
+    expect(stderr).toContain(AUTH_BANNER_LINE_1);
+    expect(stderr).toContain(LOGIN_URL);
+  });
+
+  it("T5: invalid token, study list → 401 path, exit 1", async () => {
+    const tokenPath = tmpToken("not.a.valid.jwt.here");
+
+    const { stderr, code } = await runCli([
+      "--token",
+      tokenPath,
+      "study",
+      "list",
+    ]);
+
+    expect(code).toBe(1);
+    expect(stderr).toContain(AUTH_BANNER_LINE_1);
+    expect(stderr).toContain(LOGIN_URL);
+  });
+});
+
+describe("E2E — HTTP 403 host-not-in-allowlist [mock — real API doesn't easily produce 403]", () => {
   let server: MockServer;
-  const requests: { method: string; url: string }[] = [];
 
   beforeAll(async () => {
-    server = await startMockServer((req, res) => {
-      requests.push({ method: req.method ?? "", url: req.url ?? "" });
-      res.statusCode = 401;
+    server = await startMockServer((_req, res) => {
+      res.statusCode = 403;
       res.setHeader("content-type", "application/json");
       res.end(
         JSON.stringify({
           ok: false,
-          status_code: 401,
-          error_code: "UNAUTHORIZED",
-          code: "UNAUTHORIZED",
-          data: "invalid_api_key",
-          message: "invalid_api_key",
+          status_code: 403,
+          error_code: "FORBIDDEN",
+          code: "FORBIDDEN",
+          message: "host not in allowlist",
+          data: "host not in allowlist",
         }),
       );
     });
@@ -107,9 +141,8 @@ describe("E2E — HTTP 401 from mock server (T4–T5)", () => {
     await server.close();
   });
 
-  it("T4: invalid token, billing balance → 401 path, exit 1", async () => {
-    const tokenPath = tmpToken("fake-invalid-token-xyz");
-    const before = requests.length;
+  it("T_403: 403 → [HTTP 403] + body details, exit 1, no auth banner", async () => {
+    const tokenPath = tmpToken("fake-token");
 
     const { stderr, code } = await runCli(
       ["--token", tokenPath, "billing", "balance"],
@@ -117,32 +150,19 @@ describe("E2E — HTTP 401 from mock server (T4–T5)", () => {
     );
 
     expect(code).toBe(1);
-    expect(requests.length).toBe(before + 1);
-    expect(requests[before].url).toBe("/api/v1/billing/balance");
-    expect(stderr).toContain(AUTH_BANNER_LINE_1);
-  });
-
-  it("T5: invalid token, study list → 401 path, exit 1", async () => {
-    const tokenPath = tmpToken("not.a.valid.jwt.here");
-    const before = requests.length;
-
-    const { stderr, code } = await runCli(
-      ["--token", tokenPath, "study", "list"],
-      { COOKIY_SERVER_URL: server.url },
-    );
-
-    expect(code).toBe(1);
-    expect(requests.length).toBe(before + 1);
-    expect(requests[before].url.startsWith("/api/v1/stud")).toBe(true);
-    expect(stderr).toContain(AUTH_BANNER_LINE_1);
+    expect(stderr).toContain("[HTTP 403]");
+    expect(stderr).toContain("host not in allowlist");
+    // 403 must NOT trigger the auth-redirect banner — that is reserved for
+    // missing/empty token files (T1–T3) and 401 server responses (T4–T5).
+    expect(stderr).not.toContain(AUTH_BANNER_LINE_1);
   });
 });
 
 describe("E2E — Network-layer errors (T6–T8)", () => {
-  it("T6: connection refused (port closed) → [fetch error] ECONNREFUSED", async () => {
-    // Find a free port, then immediately close the listener so connect() will
-    // be refused. Avoids privileged ports (some platforms reject ":1" as
-    // "bad port" before issuing a SYN).
+  it("T6: connection refused (port closed) → [fetch error] ECONNREFUSED [no mock]", async () => {
+    // Bind a temporary listener to grab a free port, then close it so the
+    // OS will refuse the next connect(). Pure OS-level behavior — the
+    // listener exists only to find a port and is gone before we test.
     const probe = await startMockServer(() => undefined);
     const url = probe.url;
     await probe.close();
@@ -159,7 +179,8 @@ describe("E2E — Network-layer errors (T6–T8)", () => {
     expect(stderr).toContain("ECONNREFUSED");
   });
 
-  it("T7: DNS resolution failure → [fetch error] ENOTFOUND", async () => {
+  it("T7: DNS resolution failure → [fetch error] ENOTFOUND [no mock]", async () => {
+    // Real DNS lookup against the IETF-reserved .invalid TLD.
     const tokenPath = tmpToken("fake-token");
 
     const { stderr, code } = await runCli(
@@ -174,9 +195,10 @@ describe("E2E — Network-layer errors (T6–T8)", () => {
     expect(stderr).toContain("ENOTFOUND");
   });
 
-  it("T8: timeout against a hanging server → [timeout 2s]", async () => {
-    // Mock server accepts the TCP connection but never writes a response —
-    // forces the client's AbortController timeout path.
+  it("T8: timeout against a hanging server → [timeout 2s] [mock — real API responds fast]", async () => {
+    // Mock server accepts the TCP connection but never writes a response,
+    // forcing the client's AbortController timeout path. Cannot be driven
+    // against the real API since it always responds quickly.
     const hanging = await startMockServer(() => {
       // intentionally do nothing — leave the request pending
     });
@@ -199,7 +221,7 @@ describe("E2E — Network-layer errors (T6–T8)", () => {
   }, 15_000);
 });
 
-describe("E2E — save-token (T9–T13)", () => {
+describe("E2E — save-token (T9–T13) [no network]", () => {
   it("T9: empty argument → usage error, exit 1", async () => {
     const { stdout, stderr, code } = await runCli(["save-token", ""]);
 
@@ -269,7 +291,7 @@ describe("E2E — save-token (T9–T13)", () => {
   });
 });
 
-describe("E2E — CLI argument parsing (T14–T16)", () => {
+describe("E2E — CLI argument parsing (T14–T16) [no network]", () => {
   it("T14: unknown sub-command → commander error + helpAfterError", async () => {
     const { stderr, code } = await runCli(["no-such-command"]);
 
