@@ -158,6 +158,45 @@ describe("E2E — HTTP 403 host-not-in-allowlist [mock — real API doesn't easi
   });
 });
 
+describe("E2E — HTTP 4xx/5xx with HTML body (T_HTML) [mock — real API returns JSON]", () => {
+  let server: MockServer;
+
+  beforeAll(async () => {
+    server = await startMockServer((_req, res) => {
+      res.statusCode = 502;
+      res.setHeader("content-type", "text/html");
+      res.end(
+        `<!doctype html>
+<html>
+<head><title>502 Bad Gateway</title></head>
+<body><h1>502 Bad Gateway</h1><p>nginx/1.18.0</p></body>
+</html>`,
+      );
+    });
+  });
+
+  afterAll(async () => {
+    await server.close();
+  });
+
+  it("T_HTML: error response with HTML body → summarized via <title>, exit 1", async () => {
+    const tokenPath = tmpToken("fake-token");
+
+    const { stderr, code } = await runCli(
+      ["--token", tokenPath, "billing", "balance"],
+      { COOKIY_SERVER_URL: server.url },
+    );
+
+    expect(code).toBe(1);
+    expect(stderr).toContain("[HTTP 502]");
+    // formatBody() should detect the HTML and emit a one-line summary using
+    // the <title>, not dump the raw HTML to stderr.
+    expect(stderr).toContain("(HTML body) 502 Bad Gateway");
+    expect(stderr).not.toContain("<!doctype html>");
+    expect(stderr).not.toContain("<html>");
+  });
+});
+
 describe("E2E — Network-layer errors (T6–T8)", () => {
   it("T6: connection refused (port closed) → [fetch error] ECONNREFUSED [no mock]", async () => {
     // Bind a temporary listener to grab a free port, then close it so the
