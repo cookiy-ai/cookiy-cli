@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cookiy AI — 用户研究新范式</title>
+<style>
+  :root {
+    --primary: #6C63FF;
+    --accent: #00D4AA;
+    --bg: #0A0A14;
+    --surface: #12121E;
+    --card: #1A1A2E;
+    --border: rgba(108,99,255,0.18);
+    --text: #F0F0F8;
+    --muted: #8888AA;
+    --gradient: linear-gradient(135deg, #6C63FF 0%, #00D4AA 100%);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  /* ── Slideshow Engine ── */
+  .slideshow { position: relative; width: 100%; height: 100vh; }
+
+  .slide {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.5s ease, transform 0.5s ease;
+    transform: translateX(40px);
+    padding: 60px 80px;
+  }
+  .slide.active {
+    opacity: 1; pointer-events: all; transform: translateX(0);
+  }
+  .slide.exit {
+    opacity: 0; transform: translateX(-40px);
+  }
+
+  /* ── Background decoration ── */
+  .bg-orb {
+    position: fixed; border-radius: 50%; filter: blur(90px);
+    pointer-events: none; z-index: 0;
+  }
+  .orb1 { width: 500px; height: 500px; top: -150px; left: -150px;
+          background: rgba(108,99,255,0.12); }
+  .orb2 { width: 400px; height: 400px; bottom: -100px; right: -100px;
+          background: rgba(0,212,170,0.10); }
+
+  /* ── Navigation ── */
+  .nav {
+    position: fixed; bottom: 36px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 12px; align-items: center; z-index: 100;
+  }
+  .nav-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--muted); cursor: pointer;
+    transition: all 0.3s;
+  }
+  .nav-dot.active { width: 28px; border-radius: 4px; background: var(--primary); }
+
+  .nav-btn {
+    position: fixed; top: 50%; transform: translateY(-50%);
+    width: 44px; height: 44px; border-radius: 50%;
+    background: var(--card); border: 1px solid var(--border);
+    color: var(--text); font-size: 18px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100; transition: all 0.2s;
+  }
+  .nav-btn:hover { background: var(--primary); border-color: var(--primary); }
+  #prevBtn { left: 20px; }
+  #nextBtn { right: 20px; }
+
+  .slide-counter {
+    position: fixed; top: 28px; right: 36px;
+    font-size: 13px; color: var(--muted); z-index: 100;
+  }
+
+  /* ── Shared layout ── */
+  .slide-inner {
+    position: relative; z-index: 1;
+    width: 100%; max-width: 1100px;
+  }
+
+  .tag {
+    display: inline-block;
+    font-size: 11px; font-weight: 700; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--accent);
+    background: rgba(0,212,170,0.1); border: 1px solid rgba(0,212,170,0.25);
+    padding: 4px 14px; border-radius: 20px; margin-bottom: 20px;
+  }
+
+  h1 { font-size: clamp(42px, 5vw, 64px); font-weight: 800; line-height: 1.1; }
+  h2 { font-size: clamp(28px, 3.5vw, 42px); font-weight: 700; line-height: 1.2; }
+  h3 { font-size: 20px; font-weight: 600; }
+
+  .gradient-text {
+    background: var(--gradient);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .subtitle {
+    font-size: clamp(16px, 2vw, 20px);
+    color: var(--muted); margin-top: 16px; line-height: 1.6;
+    max-width: 680px;
+  }
+
+  /* ── Card grid ── */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 40px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 40px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 36px; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px; padding: 28px;
+    transition: border-color 0.3s, transform 0.3s;
+  }
+  .card:hover { border-color: var(--primary); transform: translateY(-3px); }
+
+  .card-icon {
+    width: 48px; height: 48px; border-radius: 12px;
+    background: var(--gradient); display: flex; align-items: center;
+    justify-content: center; font-size: 22px; margin-bottom: 16px;
+  }
+
+  .card h3 { margin-bottom: 8px; }
+  .card p { font-size: 14px; color: var(--muted); line-height: 1.6; }
+
+  /* ── Stat blocks ── */
+  .stat { text-align: center; }
+  .stat-number {
+    font-size: 52px; font-weight: 800;
+    background: var(--gradient);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1;
+  }
+  .stat-label { font-size: 14px; color: var(--muted); margin-top: 8px; }
+
+  /* ── Step flow ── */
+  .steps { display: flex; gap: 0; margin-top: 40px; align-items: flex-start; }
+  .step { flex: 1; text-align: center; position: relative; padding: 0 10px; }
+  .step:not(:last-child)::after {
+    content: ''; position: absolute;
+    top: 24px; right: -20px; left: calc(50% + 24px);
+    height: 1px; background: var(--border);
+  }
+  .step-num {
+    width: 48px; height: 48px; border-radius: 50%;
+    background: var(--gradient); font-weight: 800; font-size: 18px;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 14px;
+  }
+  .step h3 { font-size: 15px; margin-bottom: 6px; }
+  .step p { font-size: 13px; color: var(--muted); line-height: 1.5; }
+
+  /* ── Split layout ── */
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 60px; align-items: center; }
+  .split-text h2 { margin-bottom: 20px; }
+  .split-text p { color: var(--muted); line-height: 1.8; font-size: 16px; }
+
+  .feature-list { margin-top: 28px; display: flex; flex-direction: column; gap: 14px; }
+  .feature-item { display: flex; align-items: flex-start; gap: 14px; }
+  .feature-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+    flex-shrink: 0; margin-top: 7px;
+  }
+  .feature-item span { font-size: 15px; color: var(--muted); line-height: 1.6; }
+
+  /* ── Code block ── */
+  .code-card {
+    background: #0D0D1A; border: 1px solid var(--border);
+    border-radius: 16px; overflow: hidden;
+  }
+  .code-header {
+    background: var(--card); padding: 12px 20px;
+    display: flex; align-items: center; gap: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .code-dot { width: 12px; height: 12px; border-radius: 50%; }
+  .code-title { font-size: 13px; color: var(--muted); margin-left: 8px; }
+  .code-body { padding: 24px; font-family: 'Courier New', monospace; font-size: 14px; line-height: 1.8; }
+  .cmd { color: #00D4AA; }
+  .arg { color: #6C9FFF; }
+  .comment { color: #555577; }
+  .out { color: #AA88FF; }
+
+  /* ── Big center slide ── */
+  .center-slide { text-align: center; }
+  .center-slide .subtitle { margin: 20px auto 0; }
+
+  /* ── Pillar layout ── */
+  .pillars { display: flex; gap: 2px; margin-top: 40px; border-radius: 16px; overflow: hidden; }
+  .pillar {
+    flex: 1; background: var(--card); padding: 28px 20px;
+    border: 1px solid var(--border); transition: background 0.3s;
+  }
+  .pillar:hover { background: rgba(108,99,255,0.12); }
+  .pillar-num {
+    font-size: 13px; font-weight: 700; letter-spacing: 2px;
+    color: var(--accent); margin-bottom: 12px;
+  }
+  .pillar h3 { margin-bottom: 10px; font-size: 17px; }
+  .pillar ul { list-style: none; }
+  .pillar ul li {
+    font-size: 13px; color: var(--muted); padding: 4px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .pillar ul li::before { content: '→ '; color: var(--primary); }
+
+  /* ── Target users ── */
+  .user-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 36px; }
+  .user-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 22px; text-align: center;
+  }
+  .user-emoji { font-size: 32px; margin-bottom: 12px; }
+  .user-card h3 { font-size: 15px; margin-bottom: 6px; }
+  .user-card p { font-size: 13px; color: var(--muted); }
+
+  /* ── Differentiators ── */
+  .diff-list { display: flex; flex-direction: column; gap: 16px; margin-top: 32px; }
+  .diff-item {
+    display: flex; align-items: center; gap: 20px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px 24px;
+  }
+  .diff-icon { font-size: 24px; flex-shrink: 0; }
+  .diff-item h3 { font-size: 15px; margin-bottom: 4px; }
+  .diff-item p { font-size: 13px; color: var(--muted); }
+
+  /* ── CTA slide ── */
+  .cta-box {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 24px; padding: 60px; text-align: center; margin-top: 40px;
+  }
+  .cta-btn {
+    display: inline-block; margin-top: 32px;
+    background: var(--gradient); color: #fff;
+    font-size: 16px; font-weight: 700; padding: 16px 48px;
+    border-radius: 50px; letter-spacing: 0.5px;
+  }
+  .cta-meta { margin-top: 24px; font-size: 13px; color: var(--muted); }
+
+  /* ── Progress bar ── */
+  .progress-bar {
+    position: fixed; top: 0; left: 0; height: 3px;
+    background: var(--gradient); z-index: 200;
+    transition: width 0.4s ease;
+  }
+
+  /* ── Slide title bar ── */
+  .slide-title-bar {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 32px;
+  }
+  .slide-title-bar .tag { margin-bottom: 0; }
+</style>
+</head>
+<body>
+
+<div class="bg-orb orb1"></div>
+<div class="bg-orb orb2"></div>
+<div class="progress-bar" id="progressBar"></div>
+<div class="slide-counter" id="slideCounter">1 / 9</div>
+
+<button class="nav-btn" id="prevBtn" onclick="changeSlide(-1)">‹</button>
+<button class="nav-btn" id="nextBtn" onclick="changeSlide(1)">›</button>
+
+<div class="slideshow" id="slideshow">
+
+  <!-- ══ SLIDE 1 · TITLE ══ -->
+  <div class="slide active center-slide" id="slide-1">
+    <div class="slide-inner">
+      <div class="tag">User Research · AI-Powered</div>
+      <h1>Cookiy <span class="gradient-text">AI</span></h1>
+      <p class="subtitle">
+        从研究问题到洞察报告，全流程 AI 驱动的用户研究平台<br>
+        数小时内完成过去需要数周的研究工作
+      </p>
+      <div class="grid-3" style="margin-top:56px; max-width:700px; margin-left:auto; margin-right:auto;">
+        <div class="stat"><div class="stat-number">10×</div><div class="stat-label">研究效率提升</div></div>
+        <div class="stat"><div class="stat-number">24/7</div><div class="stat-label">全天候自动运行</div></div>
+        <div class="stat"><div class="stat-number">∞</div><div class="stat-label">可扩展研究规模</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SLIDE 2 · PROBLEM ══ -->
+  <div class="slide" id="slide-2">
+    <div class="slide-inner">
+      <div class="slide-title-bar"><div class="tag">Problem</div></div>
+      <h2>传统用户研究的<span class="gradient-text">三大痛点</span></h2>
+      <div class="grid-3" style="margin-top:44px;">
+        <div class="card">
+          <div class="card-icon">⏳</div>
+          <h3>耗时漫长</h3>
+          <p>从招募参与者到生成报告，一次研究动辄需要 3–6 周，严重拖慢产品决策节奏。</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">💸</div>
+          <h3>成本高昂</h3>
+          <p>外包用研机构费用动辄数万，内部研究团队也需要大量人力和工具投入。</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">🚧</div>
+          <h3>门槛过高</h3>
+          <p>设计问卷、主持访谈、分析数据都需要专业技能，普通产品团队难以独立完成。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SLIDE 3 · SOLUTION ══ -->
+  <div class="slide" id="slide-3">
+    <div class="slide-inner">
+      <div class="slide-title-bar"><div class="tag">Solution</div></div>
+      <h2><span class="gradient-text">Cookiy AI</span> 重新定义用户研究</h2>
+      <div class="steps" style="margin-top:44px;">
+        <div class="step">
+          <div class="step-num">1</div>
+          <h3>自然语言描述</h3>
+          <p>用一句话描述你的研究目标，AI 自动生成访谈提纲</p>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <h3>AI 自动招募</h3>
+          <p>智能匹配目标用户群体，自动化参与者管理流程</p>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <h3>并行深度访谈</h3>
+          <p>同时进行真实用户访谈与合成用户模拟验证</p>
+        </div>
+        <div class="step">
+          <div class="step-num">4</div>
+          <h3>洞察报告生成</h3>
+          <p>AI 自动分析数据，输出结构化研究报告并一键分享</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SLIDE 4 · FEATURES ══ -->
+  <div class="slide" id="slide-4">
+    <div class="slide-inner">
+      <div class="slide-title-bar"><div class="tag">Core Features</div></div>
+      <h2>四大核心<span class="gradient-text">功能模块</span></h2>
+      <div class="pillars">
+        <div class="pillar">
+          <div class="pillar-num">01</div>
+          <h3>定性研究 Studies</h3>
+          <ul>
+            <li>AI 生成访谈提纲</li>
+            <li>真实用户深度访谈</li>
+            <li>合成用户模拟访谈</li>
+            <li>自动生成研究报告</li>
+            <li>报告一键公开分享</li>
+          </ul>
+        </div>
+        <div class="pillar">
+          <div class="pillar-num">02</div>
+          <h3>定量调研 Surveys</h3>
+          <ul>
+            <li>多语言问卷支持</li>
+            <li>受众分组与配额</li>
+            <li>实时响应追踪</li>
+            <li>结构化分析报告</li>
+            <li>原始数据 CSV 导出</li>
+          </ul>
+        </div>
+        <div class="pillar">
+          <div class="pillar-num">03</div>
+          <h3>参与者招募 Recruit</h3>
+          <ul>
+            <li>自然语言描述受众</li>
+            <li>AI 智能匹配参与者</li>
+            <li>增量补充招募</li>
+            <li>两步确认流程</li>
+            <li>定性/定量自动路由</li>
+          </ul>
+        </div>
+        <div class="pillar">
+          <div class="pillar-num">04</div>
+          <h3>账户管理 Billing</h3>
+          <ul>
+            <li>积分钱包系统</li>
+            <li>消费明细追踪</li>
+            <li>Stripe 支付集成</li>
+            <li>单研究费用统计</li>
+            <li>实时余额查询</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SLIDE 5 · CLI DEMO ══ -->
+  <div class="slide" id="slide-5">
+    <div class="slide-inner split">
+      <div class="split-text">
+        <div class="tag">Developer Experience</div>
+        <h2>命令行驱动，<span class="gradient-text">极简高效</span></h2>
+        <p>Cookiy AI 以 CLI 为核心交互界面，开箱即用，无需图形界面。完美集成 Claude Code、Cursor、Windsurf 等 AI 编程助手，实现研究全自动化。</p>
+        <div class="feature-list">
+          <div class="feature-item"><div class="feature-dot"></div><span>npm 全局安装，Node 18+ 即可运行</span></div>
+          <div class="feature-item"><div class="feature-dot"></div><span>Bearer Token 鉴权，浏览器 OAuth 一键登录</span></div>
+          <div class="feature-item"><div class="feature-dot"></div><span>支持 JSON 参数精细控制 API 调用</span></div>
+          <div class="feature-item"><div class="feature-dot"></div><span>内置轮询等待，无缝处理长时间异步任务</span></div>
+          <div class="feature-item"><div class="feature-dot"></div><span>后台自动检测并升级至最新版本</span></div>
+        </div>
+      </div>
+      <div class="code-card">
+        <div class="code-header">
+          <div class="code-dot" style="background:#FF5F57"></div>
+          <div class="code-dot" style="background:#FFBD2E"></div>
+          <div class="code-dot" style="background:#28C840"></div>
+          <span class="code-title">cookiy-cli terminal</span>
+        </div>
+        <div class="code-body">
+<span class="comment"># 创建一项用户研究</span>
+<span class="cmd">cookiy study create</span> <span class="arg">\
+  --brief "了解用户对新结账流程的看法"</span>
+
+<span class="out">✓ Study created: study_9xK2m...</span>
+<span class="out">✓ Discussion guide generated</span>
+
+<span class="comment"># 招募参与者</span>
+<span class="cmd">cookiy recruit start</span> <span class="arg">\
+  --study study_9xK2m \
+  --audience "25-40岁电商活跃用户" \
+  --count 10</span>
+
+<span class="out">✓ 10 participants matched</span>
+
+<span class="comment"># 运行合成用户验证</span>
+<span class="cmd">cookiy study run-synthetic-user</span> <span class="arg">\
+  --study study_9xK2m --count 5</span>
+
+<span class="comment"># 生成并获取报告链接</span>
+<span class="cmd">cookiy study report wait</span> <span class="arg">study_9xK2m</span>
+<span class="cmd">cookiy study report link</span> <span class="arg">study_9xK2m</span>
+<span class="out">https://cookiy.ai/report/...</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SLIDE 6 · SYNTHETIC USERS ══ -->
+  <div class="slide" id="slide-6">
+    <div class="slide-inner">
+      <div class="slide-title-bar"><div class="tag">Innovation</div></div>
+      <h2><span class="gradient-text">合成用户</span> × 真实用户的混合研究模式</h2>
+      <div class="grid-2" style="margin-top:40px;">
+        <div class="card" style="border-color:rgba(108,99,255,0.4);">
+          <div style="display:flex; align-items:center; gap:12px; margin-bottom:20px;">
+            <div class="card-icon" style="margin-bottom:0;">🤖</div>
+            <h3>合成用户访谈</h3>
+          </div>
+          <p style="margin-bottom:16px;">AI 生成逼真的用户画像并模拟真实访谈对话，在招募真实用户前快速验证研究假设，节省时间与成本。</p>
+          <ul style="list-style:none; display:flex; flex-direction:column; gap:8px;">
+            <li style="font-size:13px; color:var(--muted);">→ 即时可用，无需等待招募</li>
+            <li style="font-size:13px; color:var(--muted);">→ 成本极低，可大量并行</li>
+            <li style="font-size:13px; color:var(--muted);">→ 边缘场景覆盖更全面</li>
+          </ul>
+        </div>
+        <div class="card" style="border-color:rgba(0,212,170,0.4);">
+          <div style="display:flex; align-items:center; gap:12px; margin-bottom:20px;">
+            <div class="card-icon" style="margin-bottom:0; background:linear-gradient(135deg,#00D4AA,#0099FF);">👥</div>
+            <h3>真实用户访谈</h3>
+          </div>
+          <p style="margin-bottom:16px;">从 Cookiy AI 精选参与者库中招募真实用户，AI 主持结构化深度访谈，自动转录与分析，挖掘真实洞察。</p>
+          <ul style="list-style:none; display:flex; flex-direction:column; gap:8px;">
+            <li style="font-size:13px; color:var(--muted);">→ 真实情感与行为数据</li>
+            <li style="font-size:13px; color:var(--muted);">→ AI 访谈一致性更高</li>
+            <li style="font-size:13px; color:var(--muted);">→ 自动转录与关键词提取</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SLIDE 7 · TARGET USERS ══ -->
+  <div class="slide" id="slide-7">
+    <div class="slide-inner">
+      <div class="slide-title-bar"><div class="tag">Who It's For</div></div>
+      <h2>适用于所有<span class="gradient-text">以用户为中心</span>的团队</h2>
+      <div class="user-grid">
+        <div class="user-card">
+          <div class="user-emoji">🔬</div>
+          <h3>用户研究员</h3>
+          <p>从繁琐的手工操作中解放，专注洞察分析而非流程管理</p>
+        </div>
+        <div class="user-card">
+          <div class="user-emoji">📦</div>
+          <h3>产品经理</h3>
+          <p>随时按需发起研究，数小时内获得决策所需的用户数据</p>
+        </div>
+        <div class="user-card">
+          <div class="user-emoji">🎨</div>
+          <h3>UX 设计师</h3>
+          <p>快速验证设计方案，用真实反馈驱动迭代而非假设</p>
+        </div>
+        <div class="user-card">
+          <div class="user-emoji">📊</div>
+          <h3>市场营销</h3>
+          <p>大规模定量调研助力受众分析和市场定位精准决策</p>
+        </div>
+        <div class="user-card">
+          <div class="user-emoji">🚀</div>
+          <h3>初创企业</h3>
+          <p>以极低成本获取企业级研究能力，缩短产品市场匹配周期</p>
+        </div>
+        <div class="user-card">
+          <div class="user-emoji">🤖</div>
+          <h3>AI Agent 开发者</h3>
+          <p>深度集成 Claude Code 等工具，实现研究流程完全自动化</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SLIDE 8 · DIFFERENTIATORS ══ -->
+  <div class="slide" id="slide-8">
+    <div class="slide-inner">
+      <div class="slide-title-bar"><div class="tag">Why Cookiy AI</div></div>
+      <h2>核心<span class="gradient-text">竞争优势</span></h2>
+      <div class="grid-2" style="margin-top:36px;">
+        <div class="diff-list">
+          <div class="diff-item">
+            <div class="diff-icon">⚡</div>
+            <div>
+              <h3>极速研究闭环</h3>
+              <p>从研究问题到洞察报告，数小时完成传统需要数周的全流程</p>
+            </div>
+          </div>
+          <div class="diff-item">
+            <div class="diff-icon">🧠</div>
+            <div>
+              <h3>AI-First 方法论</h3>
+              <p>自然语言输入即可发起研究，无研究背景的团队也能独立完成</p>
+            </div>
+          </div>
+          <div class="diff-item">
+            <div class="diff-icon">🔀</div>
+            <div>
+              <h3>混合研究模式</h3>
+              <p>同一平台支持定性访谈、定量问卷、合成用户，灵活组合使用</p>
+            </div>
+          </div>
+        </div>
+        <div class="diff-list">
+          <div class="diff-item">
+            <div class="diff-icon">🖥️</div>
+            <div>
+              <h3>终端原生体验</h3>
+              <p>专为开发者和技术团队设计，无缝融入现有工作流和 AI 工具链</p>
+            </div>
+          </div>
+          <div class="diff-item">
+            <div class="diff-icon">📈</div>
+            <div>
+              <h3>按需付费模型</h3>
+              <p>积分制弹性计费，无固定月费，小团队到企业均可低成本起步</p>
+            </div>
+          </div>
+          <div class="diff-item">
+            <div class="diff-icon">🌍</div>
+            <div>
+              <h3>多语言全球化</h3>
+              <p>问卷和访谈支持多种语言，轻松触达全球目标用户群体</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SLIDE 9 · CTA ══ -->
+  <div class="slide center-slide" id="slide-9">
+    <div class="slide-inner">
+      <div class="tag">Get Started</div>
+      <h1>立即开始你的<br><span class="gradient-text">第一次 AI 用户研究</span></h1>
+      <div class="cta-box" style="max-width:700px; margin:40px auto 0;">
+        <p style="color:var(--muted); font-size:16px; line-height:1.8;">
+          安装 Cookiy CLI，三条命令即可完成你的第一次用户研究
+        </p>
+        <div class="code-card" style="text-align:left; margin-top:24px;">
+          <div class="code-header">
+            <div class="code-dot" style="background:#FF5F57"></div>
+            <div class="code-dot" style="background:#FFBD2E"></div>
+            <div class="code-dot" style="background:#28C840"></div>
+            <span class="code-title">Quick Start</span>
+          </div>
+          <div class="code-body" style="font-size:15px;">
+<span class="comment"># 1. 安装</span>
+<span class="cmd">npm install -g cookiy-cli</span>
+
+<span class="comment"># 2. 登录</span>
+<span class="cmd">cookiy save-token</span>
+
+<span class="comment"># 3. 发起研究</span>
+<span class="cmd">cookiy study create</span> <span class="arg">--brief "你的研究目标"</span>
+          </div>
+        </div>
+        <div class="cta-meta">cookiy.ai &nbsp;·&nbsp; 开箱即用 &nbsp;·&nbsp; MIT 开源 CLI &nbsp;·&nbsp; Node 18+</div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /slideshow -->
+
+<div class="nav" id="navDots"></div>
+
+<script>
+  const TOTAL = 9;
+  let current = 1;
+
+  function buildDots() {
+    const nav = document.getElementById('navDots');
+    for (let i = 1; i <= TOTAL; i++) {
+      const d = document.createElement('div');
+      d.className = 'nav-dot' + (i === 1 ? ' active' : '');
+      d.onclick = () => goTo(i);
+      nav.appendChild(d);
+    }
+  }
+
+  function goTo(n) {
+    if (n < 1 || n > TOTAL) return;
+    const prev = document.getElementById('slide-' + current);
+    prev.classList.remove('active');
+    prev.classList.add('exit');
+    setTimeout(() => prev.classList.remove('exit'), 500);
+
+    current = n;
+    const next = document.getElementById('slide-' + current);
+    next.classList.add('active');
+
+    // dots
+    document.querySelectorAll('.nav-dot').forEach((d, i) => {
+      d.classList.toggle('active', i + 1 === current);
+    });
+
+    // counter
+    document.getElementById('slideCounter').textContent = current + ' / ' + TOTAL;
+
+    // progress
+    document.getElementById('progressBar').style.width = ((current / TOTAL) * 100) + '%';
+
+    // btn visibility
+    document.getElementById('prevBtn').style.opacity = current === 1 ? '0.2' : '1';
+    document.getElementById('nextBtn').style.opacity = current === TOTAL ? '0.2' : '1';
+  }
+
+  function changeSlide(dir) { goTo(current + dir); }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') changeSlide(1);
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') changeSlide(-1);
+  });
+
+  // Touch swipe
+  let touchX = 0;
+  document.addEventListener('touchstart', e => { touchX = e.touches[0].clientX; });
+  document.addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - touchX;
+    if (Math.abs(dx) > 50) changeSlide(dx < 0 ? 1 : -1);
+  });
+
+  buildDots();
+  goTo(1);
+</script>
+</body>
+</html>
