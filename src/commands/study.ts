@@ -8,6 +8,29 @@ import {
   mergeRawJson,
 } from "../util.js";
 
+function isGuidePending(status: string): boolean {
+  return [
+    "",
+    "queued",
+    "running",
+    "guide_generation_queued",
+    "guide_generation_in_progress",
+  ].includes(status);
+}
+
+function isGuideFailed(status: string): boolean {
+  return ["failed", "guide_generation_failed"].includes(status);
+}
+
+function isReportPending(status: string): boolean {
+  return [
+    "",
+    "report_not_requested",
+    "report_requested",
+    "report_generation_in_progress",
+  ].includes(status);
+}
+
 export function registerStudy(program: Command): void {
   const study = program
     .command("study")
@@ -116,7 +139,11 @@ export function registerStudy(program: Command): void {
           guideObj = activity?.sources?.guide ?? {};
           const status =
             (guideObj as { status?: string } | null)?.status ?? "";
-          if (status !== "guide_generation_in_progress") return guideObj;
+          if (isGuideFailed(status)) {
+            console.error(JSON.stringify(guideObj, null, 2));
+            throw new Error("Guide generation failed");
+          }
+          if (!isGuidePending(status)) return guideObj;
           if (Date.now() >= deadline) {
             console.log(JSON.stringify(guideObj, null, 2));
             throw new Error(
@@ -315,13 +342,25 @@ export function registerStudy(program: Command): void {
       await runV1(async () => {
         const deadline = Date.now() + opts.timeoutMs;
         const sid = encodeURIComponent(opts.studyId);
+        let reportObj: unknown = {};
         while (true) {
           const activity = (await v1.get(`/v1/studies/${sid}/activity`)) as
-            | { sources?: { report?: { status?: string } } }
+            | { sources?: { report?: unknown } }
             | null;
-          const status = activity?.sources?.report?.status ?? "";
-          if (status !== "report_generation_in_progress") break;
+          reportObj = activity?.sources?.report ?? {};
+          const status =
+            (reportObj as { status?: string } | null)?.status ?? "";
+          if (status === "report_ready") break;
+          if (status === "report_failed") {
+            console.error(JSON.stringify(reportObj, null, 2));
+            throw new Error("Report generation failed");
+          }
+          if (!isReportPending(status)) {
+            console.error(JSON.stringify(reportObj, null, 2));
+            throw new Error(`Unexpected report status: ${status}`);
+          }
           if (Date.now() >= deadline) {
+            console.error(JSON.stringify(reportObj, null, 2));
             throw new Error(
               `Timeout waiting for report generation (${opts.timeoutMs}ms)`,
             );
