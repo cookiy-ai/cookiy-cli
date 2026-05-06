@@ -214,16 +214,26 @@ export function registerStudy(program: Command): void {
     .command("playback")
     .description("interview playback: url | content");
 
+  // Unified study-level playback endpoint. Server merged single + batch
+  // into one route: `GET /v1/studies/:id/interviews/playback` with optional
+  // `interview_id` and `view` (url | transcript | full). When `--interview-id`
+  // is omitted, returns playbacks for ALL interviews under the study per
+  // `cookiy-study-interview.md`. No client-side pagination — server returns
+  // every playback (subject to internal sanity cap). Response shape is
+  // always `{ interviews: [...], next_cursor: null }`.
   playback
     .command("url")
-    .description("playback recording URL")
+    .description("playback recording URL (all interviews if --interview-id omitted)")
     .requiredOption("--study-id <uuid>", "study id")
-    .requiredOption("--interview-id <uuid>", "specific interview")
+    .option("--interview-id <uuid>", "specific interview (omit to fetch all)")
     .action(
-      async (opts: { studyId: string; interviewId: string }) => {
+      async (opts: { studyId: string; interviewId?: string }) => {
+        const query: Record<string, unknown> = { view: "url" };
+        if (opts.interviewId) query.interview_id = opts.interviewId;
         await runV1(() =>
           v1.get(
-            `/v1/studies/${encodeURIComponent(opts.studyId)}/interviews/${encodeURIComponent(opts.interviewId)}/playback`,
+            `/v1/studies/${encodeURIComponent(opts.studyId)}/interviews/playback`,
+            query,
           ),
         );
       },
@@ -231,14 +241,17 @@ export function registerStudy(program: Command): void {
 
   playback
     .command("content")
-    .description("playback transcript content")
+    .description("playback transcript content (all interviews if --interview-id omitted)")
     .requiredOption("--study-id <uuid>", "study id")
-    .requiredOption("--interview-id <uuid>", "specific interview")
+    .option("--interview-id <uuid>", "specific interview (omit to fetch all)")
     .action(
-      async (opts: { studyId: string; interviewId: string }) => {
+      async (opts: { studyId: string; interviewId?: string }) => {
+        const query: Record<string, unknown> = { view: "transcript" };
+        if (opts.interviewId) query.interview_id = opts.interviewId;
         await runV1(() =>
           v1.get(
-            `/v1/studies/${encodeURIComponent(opts.studyId)}/interviews/${encodeURIComponent(opts.interviewId)}/transcript`,
+            `/v1/studies/${encodeURIComponent(opts.studyId)}/interviews/playback`,
+            query,
           ),
         );
       },
