@@ -6,6 +6,7 @@ import { registerStudy } from "./commands/study.js";
 import { registerQuant } from "./commands/quant.js";
 import { registerRecruit } from "./commands/recruit.js";
 import { registerBilling } from "./commands/billing.js";
+import { registerUser } from "./commands/user.js";
 
 scheduleBackgroundUpdate();
 
@@ -61,6 +62,7 @@ registerStudy(program);
 registerQuant(program);
 registerRecruit(program);
 registerBilling(program);
+registerUser(program);
 
 // Suppress the auto-generated `help [command]` entry at every depth — we
 // rely on `-h` / `--help` exclusively, matching `claude --help` style.
