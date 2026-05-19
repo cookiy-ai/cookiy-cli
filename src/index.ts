@@ -6,6 +6,7 @@ import { registerStudy } from "./commands/study.js";
 import { registerQuant } from "./commands/quant.js";
 import { registerRecruit } from "./commands/recruit.js";
 import { registerBilling } from "./commands/billing.js";
+import { registerUser } from "./commands/user.js";
 
 scheduleBackgroundUpdate();
 
@@ -18,10 +19,7 @@ program
     "Cookiy CLI - command-line client for Cookiy AI, end-to-end user research at scale.",
   )
   .version(VERSION, "-v, --version", "Output the version number")
-  .option(
-    "--token <path>",
-    "Token file path (default ~/.cookiy/token.txt)",
-  )
+  .option("--token <path>", "Token file path (default ~/.cookiy/token.txt)")
   .showHelpAfterError('(run "cookiy --help" for usage)')
   .addHelpText(
     "after",
@@ -32,6 +30,7 @@ Examples:
   $ cookiy study create --query "..."
   $ cookiy study report generate --study-id 123
   $ cookiy quant list
+  $ cookiy user info
   $ cookiy billing transactions --limit 50
 
 Sign in:  https://s-api.cookiy.ai/oauth/cli/start`,
@@ -50,7 +49,10 @@ program.hook("preAction", (_thisCmd, actionCmd) => {
 program
   .command("save-token")
   .description("Validate and save an access token (from browser sign-in)")
-  .argument("<token_or_json>", "raw access_token string or JSON with access_token field")
+  .argument(
+    "<token_or_json>",
+    "raw access_token string or JSON with access_token field",
+  )
   .action(async (input: string) => {
     const g = program.opts<{ token?: string }>();
     if (g.token) runtime.tokenPath = g.token;
@@ -61,6 +63,7 @@ registerStudy(program);
 registerQuant(program);
 registerRecruit(program);
 registerBilling(program);
+registerUser(program);
 
 // Suppress the auto-generated `help [command]` entry at every depth — we
 // rely on `-h` / `--help` exclusively, matching `claude --help` style.
