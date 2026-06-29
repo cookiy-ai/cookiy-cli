@@ -143,7 +143,9 @@ export function registerStudy(program: Command): void {
             console.error(JSON.stringify(guideObj, null, 2));
             throw new Error("Guide generation failed");
           }
-          if (!isGuidePending(status)) return guideObj;
+          if (!isGuidePending(status)) {
+            return v1.get(`/v1/studies/${sid}/discussion-guide`);
+          }
           if (Date.now() >= deadline) {
             console.log(JSON.stringify(guideObj, null, 2));
             throw new Error(
