@@ -1,6 +1,6 @@
 {
   "name": "cookiy-cli",
-  "version": "1.22.0",
+  "version": "1.22.1",
   "description": "Cookiy AI CLI — end-to-end user research from your terminal: AI interviews, synthetic users, quant surveys, participant recruitment.",
   "keywords": [
     "cookiy",
