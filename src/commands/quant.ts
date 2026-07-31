@@ -98,8 +98,7 @@ export function registerQuant(program: Command): void {
             query,
           )) as { csv?: string } | null;
           if (r?.csv) {
-            console.log(r.csv);
-            return undefined;
+            return r.csv;
           }
           return r;
         });

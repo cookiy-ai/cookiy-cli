@@ -1,5 +1,37 @@
 import { resolveLoginUrl } from "./config.js";
 
+function writeFully(stream: NodeJS.WriteStream, text: string): Promise<void> {
+  const output = text.endsWith("\n") ? text : `${text}\n`;
+
+  return new Promise((resolve, reject) => {
+    stream.write(output, (error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+export async function exitWithOutput(options: {
+  code: number;
+  stdout?: string;
+  stderr?: string;
+}): Promise<never> {
+  try {
+    if (options.stdout !== undefined) {
+      await writeFully(process.stdout, options.stdout);
+    }
+    if (options.stderr !== undefined) {
+      await writeFully(process.stderr, options.stderr);
+    }
+  } catch {
+    process.exit(options.code === 0 ? 1 : options.code);
+  }
+  process.exit(options.code);
+}
+
 export function die(msg: string, code = 1): never {
   console.error(msg);
   process.exit(code);

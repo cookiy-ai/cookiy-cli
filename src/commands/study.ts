@@ -5,6 +5,7 @@ import {
   parseJsonArrayOption,
   parseJsonObjectOption,
   die,
+  exitWithOutput,
   mergeRawJson,
 } from "../util.js";
 
@@ -29,6 +30,78 @@ function isReportPending(status: string): boolean {
     "report_requested",
     "report_generation_in_progress",
   ].includes(status);
+}
+
+function exitWaitInProgress(value: unknown): Promise<never> {
+  return exitWithOutput({
+    code: 1,
+    stdout: JSON.stringify(value, null, 2),
+  });
+}
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function expandDotKeys(
+  value: Record<string, unknown>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  const unsafeParts = new Set(["__proto__", "prototype", "constructor"]);
+  const explicitObjectLeaves = new Set<string>();
+
+  const assign = (parts: string[], rawValue: unknown): void => {
+    let cursor = result;
+    const traversed: string[] = [];
+
+    for (const part of parts.slice(0, -1)) {
+      traversed.push(part);
+      const hasCurrent = Object.prototype.hasOwnProperty.call(cursor, part);
+      const current = cursor[part];
+      if (!hasCurrent) {
+        cursor[part] = {};
+      } else if (
+        !isJsonObject(current) ||
+        explicitObjectLeaves.has(traversed.join("."))
+      ) {
+        throw new Error(`Conflicting patch path: ${parts.join(".")}`);
+      }
+      cursor = cursor[part] as Record<string, unknown>;
+    }
+
+    const leaf = parts.at(-1)!;
+    if (Object.prototype.hasOwnProperty.call(cursor, leaf)) {
+      throw new Error(`Conflicting patch path: ${parts.join(".")}`);
+    }
+    cursor[leaf] = rawValue;
+    if (isJsonObject(rawValue)) {
+      explicitObjectLeaves.add(parts.join("."));
+    }
+  };
+
+  const visit = (
+    object: Record<string, unknown>,
+    prefix: string[] = [],
+  ): void => {
+    for (const [key, rawValue] of Object.entries(object)) {
+      const parts = key.split(".");
+      if (
+        parts.some((part) => part.length === 0 || unsafeParts.has(part))
+      ) {
+        throw new Error(`Invalid patch path: ${[...prefix, key].join(".")}`);
+      }
+
+      const path = [...prefix, ...parts];
+      if (isJsonObject(rawValue) && Object.keys(rawValue).length > 0) {
+        visit(rawValue, path);
+      } else {
+        assign(path, rawValue);
+      }
+    }
+  };
+
+  visit(value);
+  return result;
 }
 
 export function registerStudy(program: Command): void {
@@ -147,10 +220,7 @@ export function registerStudy(program: Command): void {
             return v1.get(`/v1/studies/${sid}/discussion-guide`);
           }
           if (Date.now() >= deadline) {
-            console.log(JSON.stringify(guideObj, null, 2));
-            throw new Error(
-              `Timeout waiting for guide generation (${opts.timeoutMs}ms)`,
-            );
+            await exitWaitInProgress(guideObj);
           }
           await new Promise((r) => setTimeout(r, 15000));
         }
@@ -180,7 +250,7 @@ export function registerStudy(program: Command): void {
         const body: Record<string, unknown> = {
           base_revision: opts.baseRevision,
           idempotency_key: opts.idempotencyKey,
-          patch: opts.json,
+          patch: expandDotKeys(opts.json),
         };
         if (opts.changeMessage !== undefined)
           body.change_message = opts.changeMessage;
@@ -282,7 +352,7 @@ export function registerStudy(program: Command): void {
       }) => {
         const body: Record<string, unknown> = {};
         if (opts.personaCount !== undefined) body.persona_count = opts.personaCount;
-        if (opts.plainText !== undefined) body.plain_text = opts.plainText;
+        if (opts.plainText !== undefined) body.persona = opts.plainText;
         await runV1(() =>
           v1.post(
             `/v1/studies/${encodeURIComponent(opts.studyId)}/fake-interview`,
@@ -375,10 +445,7 @@ export function registerStudy(program: Command): void {
             throw new Error(`Unexpected report status: ${status}`);
           }
           if (Date.now() >= deadline) {
-            console.error(JSON.stringify(reportObj, null, 2));
-            throw new Error(
-              `Timeout waiting for report generation (${opts.timeoutMs}ms)`,
-            );
+            await exitWaitInProgress(reportObj);
           }
           await new Promise((r) => setTimeout(r, 15000));
         }

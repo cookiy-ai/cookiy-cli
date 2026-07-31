@@ -1,5 +1,5 @@
 import { runtime, resolveServerBase, API_RPC_TIMEOUT } from "./config.js";
-import { die, dieNoAccess } from "./util.js";
+import { die, dieNoAccess, exitWithOutput } from "./util.js";
 
 export class V1RequestError extends Error {
   constructor(
@@ -41,6 +41,83 @@ function formatBody(parsed: unknown, text: string): string | null {
   return truncate(trimmed);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeSuccessResponse(value: unknown): unknown {
+  const payload =
+    isRecord(value) && value.ok === true && Object.hasOwn(value, "data")
+      ? value.data
+      : value;
+
+  if (!isRecord(payload) || !Object.hasOwn(payload, "status_message")) {
+    return payload;
+  }
+
+  const { status_message: _statusMessage, ...businessData } = payload;
+  return businessData;
+}
+
+function formatInvalidParameters(details: unknown): string | undefined {
+  if (!isRecord(details) || !Array.isArray(details.issues)) return undefined;
+
+  const messages = details.issues.flatMap((issue) => {
+    if (!isRecord(issue)) return [];
+    const path = typeof issue.path === "string" ? issue.path : "";
+    const message = typeof issue.message === "string" ? issue.message : "";
+    if (!message) return [];
+    return `${path ? `[${path}]: ` : ""}${message}`;
+  });
+
+  return messages.length > 0
+    ? `Invalid parameters: ${messages.join("; ")}`
+    : undefined;
+}
+
+function normalizeErrorResponse(value: unknown): unknown | undefined {
+  if (!isRecord(value) || value.ok !== false || !isRecord(value.error)) {
+    return undefined;
+  }
+
+  const error = value.error;
+  const invalidParameters =
+    error.code === "BAD_REQUEST" &&
+    error.message === "The request body is invalid."
+      ? formatInvalidParameters(error.details)
+      : undefined;
+  if (invalidParameters) {
+    return {
+      ok: false,
+      data: null,
+      error: { message: invalidParameters },
+    };
+  }
+
+  if (error.code === "INSUFFICIENT_BALANCE" && isRecord(error.details)) {
+    return {
+      ok: false,
+      data: null,
+      error: {
+        code: error.code,
+        message: error.message,
+        details: {
+          workflow_state: "payment_required",
+          total_cost_cents: error.details.total_cost_cents ?? null,
+          shortfall_cents: error.details.shortfall_cents ?? null,
+          quote: error.details.quote ?? null,
+        },
+      },
+    };
+  }
+
+  return {
+    ok: false,
+    data: null,
+    error,
+  };
+}
+
 function buildUrl(path: string, query?: Record<string, unknown>): string {
   const base = resolveServerBase().replace(/\/$/, "");
   const rel = path.startsWith("/") ? path : `/${path}`;
@@ -71,7 +148,6 @@ async function request(
     timedOut = true;
     controller.abort();
   }, timeoutSec * 1000);
-  // const where = `${method} ${url}`;
 
   try {
     const headers: Record<string, string> = {
@@ -86,9 +162,9 @@ async function request(
       body: opts?.body !== undefined ? JSON.stringify(opts.body) : undefined,
       signal: controller.signal,
     });
-    clearTimeout(timeoutId);
 
     const text = await res.text();
+    clearTimeout(timeoutId);
     let parsed: unknown = null;
     if (text.trim()) {
       try {
@@ -109,17 +185,17 @@ async function request(
         parsed && typeof parsed === "object"
           ? (parsed as { message?: unknown }).message
           : undefined;
-      const head = `[HTTP ${res.status}]`; // ` ${where}`
+      const head = `[HTTP ${res.status}]`;
       const msg = serverMessage ? `${head} ${String(serverMessage)}` : head;
       throw new V1RequestError(res.status, msg, parsed, bodyDisplay ?? undefined);
     }
 
-    return parsed;
+    return normalizeSuccessResponse(parsed);
   } catch (e: unknown) {
     clearTimeout(timeoutId);
     if (e instanceof V1RequestError) throw e;
     if (timedOut) {
-      die(`[timeout ${timeoutSec}s]`); // ` ${where}`
+      die(`[timeout ${timeoutSec}s]`);
     }
     const err = e as {
       message?: string;
@@ -127,7 +203,7 @@ async function request(
     };
     const reason =
       err.cause?.code ?? err.cause?.message ?? err.message ?? String(e);
-    die(`[fetch error] ${reason}`); // ` ${where} —`
+    die(`[fetch error] ${reason}`);
   }
 }
 
@@ -144,19 +220,32 @@ export async function runV1(
 ): Promise<void> {
   try {
     const result = await fn();
-    if (result !== undefined && result !== null) {
-      console.log(
-        typeof result === "string" ? result : JSON.stringify(result, null, 2),
-      );
-    }
-    process.exit(0);
+    await exitWithOutput({
+      code: 0,
+      stdout:
+        result === undefined || result === null
+          ? undefined
+          : typeof result === "string"
+            ? result
+            : JSON.stringify(result, null, 2),
+    });
   } catch (e: unknown) {
     if (e instanceof V1RequestError) {
-      console.error(e.message);
-      if (e.details) console.error(e.details);
-      process.exit(1);
+      const normalizedError = normalizeErrorResponse(e.body);
+      if (normalizedError !== undefined) {
+        await exitWithOutput({
+          code: 1,
+          stdout: JSON.stringify(normalizedError, null, 2),
+        });
+      }
+      await exitWithOutput({
+        code: 1,
+        stderr: [e.message, e.details].filter(Boolean).join("\n"),
+      });
     }
-    console.error((e as Error).message ?? String(e));
-    process.exit(1);
+    await exitWithOutput({
+      code: 1,
+      stderr: (e as Error).message ?? String(e),
+    });
   }
 }
