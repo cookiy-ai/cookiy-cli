@@ -5,3 +5,4 @@ dist
 .env
 .env.local
 npm-debug.log*
+.ai-doc/
