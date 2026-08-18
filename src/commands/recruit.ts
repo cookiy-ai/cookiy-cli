@@ -48,13 +48,16 @@ export function registerRecruit(program: Command): void {
         if (opts.incrementalParticipants !== undefined) {
           body.incremental_participants = opts.incrementalParticipants;
         }
+        if (opts.surveyPublicUrl) {
+          body.recruit_mode = "quant_survey";
+          body.survey_public_url = opts.surveyPublicUrl;
+        }
 
         const step = opts.confirmationToken ? "confirm" : "preview";
         let path: string;
         if (isStudyBased) {
           path = `/v1/studies/${encodeURIComponent(opts.studyId as string)}/recruit/${step}`;
         } else {
-          body.survey_public_url = opts.surveyPublicUrl;
           path = `/v1/quant/recruit/${step}`;
         }
 

@@ -41,6 +41,26 @@ function formatBody(parsed: unknown, text: string): string | null {
   return truncate(trimmed);
 }
 
+function getPublicApiError(parsed: unknown): {
+  message?: string;
+  code?: string;
+} {
+  if (!parsed || typeof parsed !== "object") return {};
+
+  const envelope = parsed as Record<string, unknown>;
+  const nested =
+    envelope.error && typeof envelope.error === "object"
+      ? (envelope.error as Record<string, unknown>)
+      : undefined;
+  const message = nested?.message ?? envelope.message;
+  const code = nested?.code ?? envelope.code ?? envelope.error_code;
+
+  return {
+    message: typeof message === "string" && message.trim() ? message : undefined,
+    code: typeof code === "string" && code.trim() ? code : undefined,
+  };
+}
+
 function buildUrl(path: string, query?: Record<string, unknown>): string {
   const base = resolveServerBase().replace(/\/$/, "");
   const rel = path.startsWith("/") ? path : `/${path}`;
@@ -105,12 +125,12 @@ async function request(
     }
 
     if (res.status < 200 || res.status >= 300) {
-      const serverMessage =
-        parsed && typeof parsed === "object"
-          ? (parsed as { message?: unknown }).message
-          : undefined;
+      const serverError = getPublicApiError(parsed);
       const head = `[HTTP ${res.status}]`; // ` ${where}`
-      const msg = serverMessage ? `${head} ${String(serverMessage)}` : head;
+      const code = serverError.code ? ` (${serverError.code})` : "";
+      const msg = serverError.message
+        ? `${head} ${serverError.message}${code}`
+        : `${head}${code}`;
       throw new V1RequestError(res.status, msg, parsed, bodyDisplay ?? undefined);
     }
 
