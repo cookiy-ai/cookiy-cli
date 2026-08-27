@@ -167,7 +167,7 @@ describe("REST response compatibility", () => {
     });
   });
 
-  it("formats REST validation issues as the existing CLI error contract", async () => {
+  it("writes REST validation error details to stderr", async () => {
     const tokenPath = tmpToken("fake-token");
     const { stdout, stderr, code } = await runCli(
       [
@@ -182,18 +182,22 @@ describe("REST response compatibility", () => {
     );
 
     expect(code).toBe(1);
-    expect(stderr).toBe("");
-    expect(JSON.parse(stdout)).toEqual({
-      ok: false,
-      data: null,
-      error: {
-        message:
-          "Invalid parameters: [amount_cents]: Too small: expected number to be >=1000",
+    expect(stdout).toBe("");
+    expect(JSON.parse(stderr)).toEqual({
+      code: "BAD_REQUEST",
+      message: "The request body is invalid.",
+      details: {
+        issues: [
+          {
+            path: "amount_cents",
+            message: "Too small: expected number to be >=1000",
+          },
+        ],
       },
     });
   });
 
-  it("projects insufficient-balance details to the existing CLI contract", async () => {
+  it("writes insufficient-balance error details to stderr", async () => {
     const tokenPath = tmpToken("fake-token");
     const { stdout, stderr, code } = await runCli(
       [
@@ -211,24 +215,23 @@ describe("REST response compatibility", () => {
     );
 
     expect(code).toBe(1);
-    expect(stderr).toBe("");
-    expect(JSON.parse(stdout)).toEqual({
-      ok: false,
-      data: null,
-      error: {
-        code: "INSUFFICIENT_BALANCE",
-        message: "Insufficient balance for synthetic interview",
-        details: {
-          workflow_state: "payment_required",
-          total_cost_cents: 20,
-          shortfall_cents: 20,
-          quote: { required_personas: 1 },
-        },
+    expect(stdout).toBe("");
+    expect(JSON.parse(stderr)).toEqual({
+      code: "INSUFFICIENT_BALANCE",
+      message: "Insufficient balance for synthetic interview",
+      details: {
+        feature: "synthetic",
+        payment_required: true,
+        total_cost_cents: 20,
+        shortfall_cents: 20,
+        quote: { required_personas: 1 },
+        automatic_top_up: null,
+        checkout_url: null,
       },
     });
   });
 
-  it("removes REST-only status messages from CLI business output", async () => {
+  it("preserves all REST business fields", async () => {
     const tokenPath = tmpToken("fake-token");
     const { stdout, stderr, code } = await runCli(
       [
@@ -249,6 +252,7 @@ describe("REST response compatibility", () => {
     expect(JSON.parse(stdout)).toEqual({
       status: "confirmation_required",
       confirmation_token: "confirmation-token",
+      status_message: "Review before confirming.",
     });
   });
 

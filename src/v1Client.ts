@@ -45,77 +45,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function normalizeSuccessResponse(value: unknown): unknown {
-  const payload =
-    isRecord(value) && value.ok === true && Object.hasOwn(value, "data")
-      ? value.data
-      : value;
-
-  if (!isRecord(payload) || !Object.hasOwn(payload, "status_message")) {
-    return payload;
-  }
-
-  const { status_message: _statusMessage, ...businessData } = payload;
-  return businessData;
+function unwrapSuccessResponse(value: unknown): unknown {
+  return isRecord(value) && value.ok === true && Object.hasOwn(value, "data")
+    ? value.data
+    : value;
 }
 
-function formatInvalidParameters(details: unknown): string | undefined {
-  if (!isRecord(details) || !Array.isArray(details.issues)) return undefined;
-
-  const messages = details.issues.flatMap((issue) => {
-    if (!isRecord(issue)) return [];
-    const path = typeof issue.path === "string" ? issue.path : "";
-    const message = typeof issue.message === "string" ? issue.message : "";
-    if (!message) return [];
-    return `${path ? `[${path}]: ` : ""}${message}`;
-  });
-
-  return messages.length > 0
-    ? `Invalid parameters: ${messages.join("; ")}`
+function extractApiError(value: unknown): unknown | undefined {
+  return isRecord(value) && value.ok === false && Object.hasOwn(value, "error")
+    ? value.error
     : undefined;
-}
-
-function normalizeErrorResponse(value: unknown): unknown | undefined {
-  if (!isRecord(value) || value.ok !== false || !isRecord(value.error)) {
-    return undefined;
-  }
-
-  const error = value.error;
-  const invalidParameters =
-    error.code === "BAD_REQUEST" &&
-    error.message === "The request body is invalid."
-      ? formatInvalidParameters(error.details)
-      : undefined;
-  if (invalidParameters) {
-    return {
-      ok: false,
-      data: null,
-      error: { message: invalidParameters },
-    };
-  }
-
-  if (error.code === "INSUFFICIENT_BALANCE" && isRecord(error.details)) {
-    return {
-      ok: false,
-      data: null,
-      error: {
-        code: error.code,
-        message: error.message,
-        details: {
-          workflow_state: "payment_required",
-          total_cost_cents: error.details.total_cost_cents ?? null,
-          shortfall_cents: error.details.shortfall_cents ?? null,
-          quote: error.details.quote ?? null,
-        },
-      },
-    };
-  }
-
-  return {
-    ok: false,
-    data: null,
-    error,
-  };
 }
 
 function buildUrl(path: string, query?: Record<string, unknown>): string {
@@ -190,7 +129,7 @@ async function request(
       throw new V1RequestError(res.status, msg, parsed, bodyDisplay ?? undefined);
     }
 
-    return normalizeSuccessResponse(parsed);
+    return unwrapSuccessResponse(parsed);
   } catch (e: unknown) {
     clearTimeout(timeoutId);
     if (e instanceof V1RequestError) throw e;
@@ -231,11 +170,11 @@ export async function runV1(
     });
   } catch (e: unknown) {
     if (e instanceof V1RequestError) {
-      const normalizedError = normalizeErrorResponse(e.body);
-      if (normalizedError !== undefined) {
+      const apiError = extractApiError(e.body);
+      if (apiError !== undefined) {
         await exitWithOutput({
           code: 1,
-          stdout: JSON.stringify(normalizedError, null, 2),
+          stderr: JSON.stringify(apiError, null, 2),
         });
       }
       await exitWithOutput({
