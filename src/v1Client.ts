@@ -104,7 +104,7 @@ async function request(
 
     const text = await res.text();
     clearTimeout(timeoutId);
-    let parsed: unknown = null;
+    let parsed: unknown = undefined;
     if (text.trim()) {
       try {
         parsed = JSON.parse(text);
@@ -162,7 +162,7 @@ export async function runV1(
     await exitWithOutput({
       code: 0,
       stdout:
-        result === undefined || result === null
+        result === undefined
           ? undefined
           : typeof result === "string"
             ? result

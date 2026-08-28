@@ -124,6 +124,18 @@ describe("REST response compatibility", () => {
         return;
       }
 
+      if (req.url === "/api/v1/studies/study-null/discussion-guide") {
+        res.statusCode = 200;
+        res.end(JSON.stringify({ ok: true, data: null }));
+        return;
+      }
+
+      if (req.url === "/api/v1/studies/study-empty/discussion-guide") {
+        res.statusCode = 204;
+        res.end();
+        return;
+      }
+
       if (req.url === "/api/v1/studies/study-body-timeout/discussion-guide") {
         res.writeHead(200, { "content-type": "application/json" });
         res.write('{"partial":');
@@ -165,6 +177,46 @@ describe("REST response compatibility", () => {
     expect(JSON.parse(stdout)).toEqual({
       limitations: ["Current limitation"],
     });
+  });
+
+  it("writes explicit null response data as JSON", async () => {
+    const tokenPath = tmpToken("fake-token");
+    const { stdout, stderr, code } = await runCli(
+      [
+        "--token",
+        tokenPath,
+        "study",
+        "guide",
+        "get",
+        "--study-id",
+        "study-null",
+      ],
+      { COOKIY_SERVER_URL: server.url },
+    );
+
+    expect(code).toBe(0);
+    expect(stdout).toBe("null\n");
+    expect(stderr).toBe("");
+  });
+
+  it("does not write output for an empty response body", async () => {
+    const tokenPath = tmpToken("fake-token");
+    const { stdout, stderr, code } = await runCli(
+      [
+        "--token",
+        tokenPath,
+        "study",
+        "guide",
+        "get",
+        "--study-id",
+        "study-empty",
+      ],
+      { COOKIY_SERVER_URL: server.url },
+    );
+
+    expect(code).toBe(0);
+    expect(stdout).toBe("");
+    expect(stderr).toBe("");
   });
 
   it("writes REST validation error details to stderr", async () => {
