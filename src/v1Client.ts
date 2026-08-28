@@ -1,5 +1,5 @@
 import { runtime, resolveServerBase, API_RPC_TIMEOUT } from "./config.js";
-import { die, dieNoAccess } from "./util.js";
+import { die, dieNoAccess, exitWithOutput } from "./util.js";
 
 export class V1RequestError extends Error {
   constructor(
@@ -41,6 +41,22 @@ function formatBody(parsed: unknown, text: string): string | null {
   return truncate(trimmed);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function unwrapSuccessResponse(value: unknown): unknown {
+  return isRecord(value) && value.ok === true && Object.hasOwn(value, "data")
+    ? value.data
+    : value;
+}
+
+function extractApiError(value: unknown): unknown | undefined {
+  return isRecord(value) && value.ok === false && Object.hasOwn(value, "error")
+    ? value.error
+    : undefined;
+}
+
 function buildUrl(path: string, query?: Record<string, unknown>): string {
   const base = resolveServerBase().replace(/\/$/, "");
   const rel = path.startsWith("/") ? path : `/${path}`;
@@ -71,7 +87,6 @@ async function request(
     timedOut = true;
     controller.abort();
   }, timeoutSec * 1000);
-  // const where = `${method} ${url}`;
 
   try {
     const headers: Record<string, string> = {
@@ -86,10 +101,10 @@ async function request(
       body: opts?.body !== undefined ? JSON.stringify(opts.body) : undefined,
       signal: controller.signal,
     });
-    clearTimeout(timeoutId);
 
     const text = await res.text();
-    let parsed: unknown = null;
+    clearTimeout(timeoutId);
+    let parsed: unknown = undefined;
     if (text.trim()) {
       try {
         parsed = JSON.parse(text);
@@ -109,17 +124,17 @@ async function request(
         parsed && typeof parsed === "object"
           ? (parsed as { message?: unknown }).message
           : undefined;
-      const head = `[HTTP ${res.status}]`; // ` ${where}`
+      const head = `[HTTP ${res.status}]`;
       const msg = serverMessage ? `${head} ${String(serverMessage)}` : head;
       throw new V1RequestError(res.status, msg, parsed, bodyDisplay ?? undefined);
     }
 
-    return parsed;
+    return unwrapSuccessResponse(parsed);
   } catch (e: unknown) {
     clearTimeout(timeoutId);
     if (e instanceof V1RequestError) throw e;
     if (timedOut) {
-      die(`[timeout ${timeoutSec}s]`); // ` ${where}`
+      die(`[timeout ${timeoutSec}s]`);
     }
     const err = e as {
       message?: string;
@@ -127,7 +142,7 @@ async function request(
     };
     const reason =
       err.cause?.code ?? err.cause?.message ?? err.message ?? String(e);
-    die(`[fetch error] ${reason}`); // ` ${where} —`
+    die(`[fetch error] ${reason}`);
   }
 }
 
@@ -144,19 +159,32 @@ export async function runV1(
 ): Promise<void> {
   try {
     const result = await fn();
-    if (result !== undefined && result !== null) {
-      console.log(
-        typeof result === "string" ? result : JSON.stringify(result, null, 2),
-      );
-    }
-    process.exit(0);
+    await exitWithOutput({
+      code: 0,
+      stdout:
+        result === undefined
+          ? undefined
+          : typeof result === "string"
+            ? result
+            : JSON.stringify(result, null, 2),
+    });
   } catch (e: unknown) {
     if (e instanceof V1RequestError) {
-      console.error(e.message);
-      if (e.details) console.error(e.details);
-      process.exit(1);
+      const apiError = extractApiError(e.body);
+      if (apiError !== undefined) {
+        await exitWithOutput({
+          code: 1,
+          stderr: JSON.stringify(apiError, null, 2),
+        });
+      }
+      await exitWithOutput({
+        code: 1,
+        stderr: [e.message, e.details].filter(Boolean).join("\n"),
+      });
     }
-    console.error((e as Error).message ?? String(e));
-    process.exit(1);
+    await exitWithOutput({
+      code: 1,
+      stderr: (e as Error).message ?? String(e),
+    });
   }
 }
