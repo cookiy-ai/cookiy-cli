@@ -17,7 +17,7 @@ describe("study wait output contract", () => {
     server = await startMockServer((req, res) => {
       requests.push(req.url ?? "");
       res.setHeader("content-type", "application/json");
-      const [, kind, mode] = req.url?.match(/studies\/(guide|report)-(pending|ready|failed|unknown|later-ready|later-failed|later-unknown)\//) ?? [];
+      const [, kind, mode] = req.url?.match(/studies\/(guide|report)-(pending|ready|failed|unknown|generic-ready|later-ready|later-failed|later-unknown)\//) ?? [];
       let data: unknown;
       if (req.url?.endsWith("/activity") && kind) {
         const pollCount = requests.filter((url) => url === req.url).length;
@@ -26,6 +26,7 @@ describe("study wait output contract", () => {
           : mode;
         const status = state === "pending" ? kind + "_generation_in_progress"
           : state === "unknown" ? "unrecognized"
+          : state === "generic-ready" ? "ready"
           : state === "failed" && kind === "guide" ? "guide_generation_failed"
           : kind + "_" + state;
         data = { sources: { [kind]: { status } } };
@@ -76,6 +77,7 @@ describe("study wait output contract", () => {
       ["pending", "WAIT_TIMEOUT", kind + "_generation_in_progress"],
       ["failed", "GENERATION_FAILED", kind === "guide" ? "guide_generation_failed" : "report_failed"],
       ["unknown", "UNEXPECTED_STATUS", "unrecognized"],
+      ["generic-ready", "UNEXPECTED_STATUS", "ready"],
     ])(kind + " wait %s writes one JSON error to stderr", async (mode, errorCode, status) => {
       const url = "/api/v1/studies/" + kind + "-" + mode + "/activity";
       const before = requests.filter((r) => r === url).length;

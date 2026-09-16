@@ -9,6 +9,10 @@ import {
   mergeRawJson,
 } from "../util.js";
 
+function isGuideReady(status: string): boolean {
+  return status === "guide_ready";
+}
+
 function isGuidePending(status: string): boolean {
   return [
     "",
@@ -23,6 +27,10 @@ function isGuideFailed(status: string): boolean {
   return ["failed", "guide_generation_failed"].includes(status);
 }
 
+function isReportReady(status: string): boolean {
+  return status === "report_ready";
+}
+
 function isReportPending(status: string): boolean {
   return [
     "",
@@ -32,11 +40,19 @@ function isReportPending(status: string): boolean {
   ].includes(status);
 }
 
+function isReportFailed(status: string): boolean {
+  return status === "report_failed";
+}
+
 async function waitForSource(
   sid: string,
   source: "guide" | "report",
   timeoutMs: number,
-  states: { isPending: (status: string) => boolean; isFailed: (status: string) => boolean },
+  states: {
+    isReady: (status: string) => boolean;
+    isPending: (status: string) => boolean;
+    isFailed: (status: string) => boolean;
+  },
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   const label = source === "guide" ? "Guide" : "Report";
@@ -46,7 +62,7 @@ async function waitForSource(
       | null;
     const state = activity?.sources?.[source] ?? {};
     const status = state.status ?? "";
-    if (status === `${source}_ready`) return;
+    if (states.isReady(status)) return;
     if (states.isFailed(status)) {
       throw new CliError("GENERATION_FAILED", `${label} generation failed`, state);
     }
@@ -162,6 +178,7 @@ export function registerStudy(program: Command): void {
       await runV1(async () => {
         const sid = encodeURIComponent(opts.studyId);
         await waitForSource(sid, "guide", opts.timeoutMs, {
+          isReady: isGuideReady,
           isPending: isGuidePending,
           isFailed: isGuideFailed,
         });
@@ -369,8 +386,9 @@ export function registerStudy(program: Command): void {
       await runV1(async () => {
         const sid = encodeURIComponent(opts.studyId);
         await waitForSource(sid, "report", opts.timeoutMs, {
+          isReady: isReportReady,
           isPending: isReportPending,
-          isFailed: (status) => status === "report_failed",
+          isFailed: isReportFailed,
         });
         return v1.post(`/v1/studies/${sid}/report/share-link`, {});
       });

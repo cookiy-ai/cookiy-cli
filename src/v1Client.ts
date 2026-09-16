@@ -174,9 +174,15 @@ export async function runV1(
           ? {
               code: "UNAUTHORIZED",
               message: "Access denied — token is missing or expired.",
-              details: { login_url: resolveLoginUrl() },
             }
           : { code: `HTTP_${e.status}`, message: e.message, details: e.details };
+      }
+      if (e.status === 401 && isRecord(error)) {
+        // Error details may be any JSON value; preserve non-object details too.
+        const details = isRecord(error.details)
+          ? error.details
+          : error.details === undefined ? {} : { server_details: error.details };
+        error = { ...error, details: { ...details, login_url: resolveLoginUrl() } };
       }
     } else if (e instanceof CliError) {
       error = { code: e.code, message: e.message, details: e.details };
