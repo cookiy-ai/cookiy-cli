@@ -84,7 +84,7 @@ describe("E2E — Token file issues (T1–T3) [no network]", () => {
 describe("E2E — HTTP 401 from real s-api.cookiy.ai (T4–T5) [real network]", () => {
   // These tests hit the real production API with a fake token. The server
   // reliably returns 401 with error_code=UNAUTHORIZED, which exercises the
-  // CLI's dieNoAccess() path. Network-dependent.
+  // CLI's JSON authentication-error path. Network-dependent.
 
   it("T4: invalid token, billing balance → 401 path, exit 1", async () => {
     const tokenPath = tmpToken("fake-invalid-token-xyz");
@@ -97,8 +97,7 @@ describe("E2E — HTTP 401 from real s-api.cookiy.ai (T4–T5) [real network]", 
     ]);
 
     expect(code).toBe(1);
-    expect(stderr).toContain(AUTH_BANNER_LINE_1);
-    expect(stderr).toContain(LOGIN_URL);
+    expect(JSON.parse(stderr)).toMatchObject({ code: "UNAUTHORIZED", message: expect.any(String) });
   });
 
   it("T5: invalid token, study list → 401 path, exit 1", async () => {
@@ -112,8 +111,7 @@ describe("E2E — HTTP 401 from real s-api.cookiy.ai (T4–T5) [real network]", 
     ]);
 
     expect(code).toBe(1);
-    expect(stderr).toContain(AUTH_BANNER_LINE_1);
-    expect(stderr).toContain(LOGIN_URL);
+    expect(JSON.parse(stderr)).toMatchObject({ code: "UNAUTHORIZED", message: expect.any(String) });
   });
 });
 
@@ -150,8 +148,11 @@ describe("E2E — HTTP 403 host-not-in-allowlist [mock — real API doesn't easi
     );
 
     expect(code).toBe(1);
-    expect(stderr).toContain("[HTTP 403]");
-    expect(stderr).toContain("host not in allowlist");
+    expect(JSON.parse(stderr)).toEqual({
+      code: "HTTP_403",
+      message: "[HTTP 403] host not in allowlist",
+      details: expect.stringContaining("host not in allowlist"),
+    });
     // 403 must NOT trigger the auth-redirect banner — that is reserved for
     // missing/empty token files (T1–T3) and 401 server responses (T4–T5).
     expect(stderr).not.toContain(AUTH_BANNER_LINE_1);
@@ -188,6 +189,11 @@ describe("E2E — HTTP 4xx/5xx with HTML body (T_HTML) [mock — real API return
     );
 
     expect(code).toBe(1);
+    expect(JSON.parse(stderr)).toEqual({
+      code: "HTTP_502",
+      message: "[HTTP 502]",
+      details: "(HTML body) 502 Bad Gateway",
+    });
     expect(stderr).toContain("[HTTP 502]");
     // formatBody() should detect the HTML and emit a one-line summary using
     // the <title>, not dump the raw HTML to stderr.
@@ -214,8 +220,7 @@ describe("E2E — Network-layer errors (T6–T8)", () => {
     );
 
     expect(code).toBe(1);
-    expect(stderr).toContain("[fetch error]");
-    expect(stderr).toContain("ECONNREFUSED");
+    expect(JSON.parse(stderr)).toEqual({ code: "NETWORK_ERROR", message: "[fetch error] ECONNREFUSED" });
   });
 
   it("T7: DNS resolution failure → [fetch error] ENOTFOUND [no mock]", async () => {
@@ -230,8 +235,7 @@ describe("E2E — Network-layer errors (T6–T8)", () => {
     );
 
     expect(code).toBe(1);
-    expect(stderr).toContain("[fetch error]");
-    expect(stderr).toContain("ENOTFOUND");
+    expect(JSON.parse(stderr)).toEqual({ code: "NETWORK_ERROR", message: "[fetch error] ENOTFOUND" });
   });
 
   it("T8: timeout against a hanging server → [timeout 2s] [mock — real API responds fast]", async () => {
@@ -253,7 +257,7 @@ describe("E2E — Network-layer errors (T6–T8)", () => {
       );
 
       expect(code).toBe(1);
-      expect(stderr).toMatch(/^\[timeout 2s\]/m);
+      expect(JSON.parse(stderr)).toEqual({ code: "REQUEST_TIMEOUT", message: "[timeout 2s]" });
     } finally {
       await hanging.close();
     }

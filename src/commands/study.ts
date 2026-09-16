@@ -32,6 +32,36 @@ function isReportPending(status: string): boolean {
   ].includes(status);
 }
 
+async function waitForSource(
+  sid: string,
+  source: "guide" | "report",
+  timeoutMs: number,
+  states: { isPending: (status: string) => boolean; isFailed: (status: string) => boolean },
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  const label = source === "guide" ? "Guide" : "Report";
+  while (true) {
+    const activity = (await v1.get(`/v1/studies/${sid}/activity`)) as
+      | { sources?: Partial<Record<"guide" | "report", { status?: string }>> }
+      | null;
+    const state = activity?.sources?.[source] ?? {};
+    const status = state.status ?? "";
+    if (status === `${source}_ready`) return;
+    if (states.isFailed(status)) {
+      throw new CliError("GENERATION_FAILED", `${label} generation failed`, state);
+    }
+    if (!states.isPending(status)) {
+      throw new CliError("UNEXPECTED_STATUS", `Unexpected ${source} status: ${status}`, state);
+    }
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      throw new CliError("WAIT_TIMEOUT", `Timed out waiting for ${source} generation`, state);
+    }
+    // Every sleep is followed by a poll, including the final sleep to the deadline.
+    await new Promise((resolve) => setTimeout(resolve, Math.min(15000, remaining)));
+  }
+}
+
 export function registerStudy(program: Command): void {
   const study = program
     .command("study")
@@ -130,29 +160,12 @@ export function registerStudy(program: Command): void {
     )
     .action(async (opts: { studyId: string; timeoutMs: number }) => {
       await runV1(async () => {
-        const deadline = Date.now() + opts.timeoutMs;
         const sid = encodeURIComponent(opts.studyId);
-        let guideObj: unknown;
-        do {
-          const activity = (await v1.get(`/v1/studies/${sid}/activity`)) as
-            | { sources?: { guide?: unknown } }
-            | null;
-          guideObj = activity?.sources?.guide ?? {};
-          const status =
-            (guideObj as { status?: string } | null)?.status ?? "";
-          if (isGuideFailed(status)) {
-            throw new CliError("GENERATION_FAILED", "Guide generation failed", guideObj);
-          }
-          if (status === "guide_ready") {
-            return v1.get(`/v1/studies/${sid}/discussion-guide`);
-          }
-          if (!isGuidePending(status)) {
-            throw new CliError("UNEXPECTED_STATUS", `Unexpected guide status: ${status}`, guideObj);
-          }
-          if (Date.now() >= deadline) break;
-          await new Promise((r) => setTimeout(r, Math.max(0, Math.min(15000, deadline - Date.now()))));
-        } while (Date.now() < deadline);
-        throw new CliError("WAIT_TIMEOUT", "Timed out waiting for guide generation", guideObj);
+        await waitForSource(sid, "guide", opts.timeoutMs, {
+          isPending: isGuidePending,
+          isFailed: isGuideFailed,
+        });
+        return v1.get(`/v1/studies/${sid}/discussion-guide`);
       });
     });
 
@@ -354,29 +367,12 @@ export function registerStudy(program: Command): void {
     )
     .action(async (opts: { studyId: string; timeoutMs: number }) => {
       await runV1(async () => {
-        const deadline = Date.now() + opts.timeoutMs;
         const sid = encodeURIComponent(opts.studyId);
-        let reportObj: unknown;
-        do {
-          const activity = (await v1.get(`/v1/studies/${sid}/activity`)) as
-            | { sources?: { report?: unknown } }
-            | null;
-          reportObj = activity?.sources?.report ?? {};
-          const status =
-            (reportObj as { status?: string } | null)?.status ?? "";
-          if (status === "report_ready") {
-            return v1.post(`/v1/studies/${sid}/report/share-link`, {});
-          }
-          if (status === "report_failed") {
-            throw new CliError("GENERATION_FAILED", "Report generation failed", reportObj);
-          }
-          if (!isReportPending(status)) {
-            throw new CliError("UNEXPECTED_STATUS", `Unexpected report status: ${status}`, reportObj);
-          }
-          if (Date.now() >= deadline) break;
-          await new Promise((r) => setTimeout(r, Math.max(0, Math.min(15000, deadline - Date.now()))));
-        } while (Date.now() < deadline);
-        throw new CliError("WAIT_TIMEOUT", "Timed out waiting for report generation", reportObj);
+        await waitForSource(sid, "report", opts.timeoutMs, {
+          isPending: isReportPending,
+          isFailed: (status) => status === "report_failed",
+        });
+        return v1.post(`/v1/studies/${sid}/report/share-link`, {});
       });
     });
 }

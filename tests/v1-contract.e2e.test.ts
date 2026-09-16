@@ -392,6 +392,6 @@ describe("REST response compatibility", () => {
 
     expect(code).toBe(1);
     expect(stdout).toBe("");
-    expect(stderr).toBe("[timeout 1s]\n");
+    expect(JSON.parse(stderr)).toEqual({ code: "REQUEST_TIMEOUT", message: "[timeout 1s]" });
   });
 });

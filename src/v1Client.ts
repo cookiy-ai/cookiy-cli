@@ -1,5 +1,5 @@
-import { runtime, resolveServerBase, API_RPC_TIMEOUT } from "./config.js";
-import { die, dieNoAccess, exitWithOutput, CliError } from "./util.js";
+import { runtime, resolveServerBase, resolveLoginUrl, API_RPC_TIMEOUT } from "./config.js";
+import { exitWithOutput, CliError } from "./util.js";
 
 export class V1RequestError extends Error {
   constructor(
@@ -116,10 +116,6 @@ async function request(
 
     const bodyDisplay = formatBody(parsed, text);
 
-    if (res.status === 401) {
-      dieNoAccess(bodyDisplay ?? undefined);
-    }
-
     if (res.status < 200 || res.status >= 300) {
       const serverMessage =
         parsed && typeof parsed === "object"
@@ -135,15 +131,15 @@ async function request(
     clearTimeout(timeoutId);
     if (e instanceof V1RequestError) throw e;
     if (timedOut) {
-      die(`[timeout ${timeoutSec}s]`);
+      throw new CliError("REQUEST_TIMEOUT", `[timeout ${timeoutSec}s]`);
     }
     const err = e as {
       message?: string;
       cause?: { code?: string; message?: string };
     };
     const reason =
-      err.cause?.code ?? err.cause?.message ?? err.message ?? String(e);
-    die(`[fetch error] ${reason}`);
+      err?.cause?.code ?? err?.cause?.message ?? err?.message ?? String(e);
+    throw new CliError("NETWORK_ERROR", `[fetch error] ${reason}`);
   }
 }
 
@@ -170,28 +166,26 @@ export async function runV1(
             : JSON.stringify(result, null, 2),
     });
   } catch (e: unknown) {
-    if (e instanceof CliError) {
-      return exitWithOutput({
-        code: 1,
-        stderr: JSON.stringify({ code: e.code, message: e.message, details: e.details }, null, 2),
-      });
-    }
+    let error: unknown;
     if (e instanceof V1RequestError) {
-      const apiError = extractApiError(e.body);
-      if (apiError !== undefined) {
-        return exitWithOutput({
-          code: 1,
-          stderr: JSON.stringify(apiError, null, 2),
-        });
+      error = extractApiError(e.body);
+      if (error === undefined) {
+        error = e.status === 401
+          ? {
+              code: "UNAUTHORIZED",
+              message: "Access denied — token is missing or expired.",
+              details: { login_url: resolveLoginUrl() },
+            }
+          : { code: `HTTP_${e.status}`, message: e.message, details: e.details };
       }
-      return exitWithOutput({
-        code: 1,
-        stderr: [e.message, e.details].filter(Boolean).join("\n"),
-      });
+    } else if (e instanceof CliError) {
+      error = { code: e.code, message: e.message, details: e.details };
+    } else {
+      error = { code: "CLI_ERROR", message: e instanceof Error ? e.message : String(e) };
     }
     return exitWithOutput({
       code: 1,
-      stderr: (e as Error).message ?? String(e),
+      stderr: JSON.stringify(error, null, 2),
     });
   }
 }

@@ -15,6 +15,7 @@ function writeFully(stream: NodeJS.WriteStream, text: string): Promise<void> {
   const output = text.endsWith("\n") ? text : `${text}\n`;
 
   return new Promise((resolve, reject) => {
+    // A failed write invokes its callback AND emits error; both need handling.
     stream.once("error", reject);
     stream.write(output, (error) => {
       if (error) {
@@ -40,6 +41,10 @@ export async function exitWithOutput(options: {
       await writeFully(process.stderr, options.stderr);
     }
   } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === "EPIPE") {
+      // Downstream stopped reading (e.g. head); preserve the command's result.
+      process.exit(options.code);
+    }
     if (!process.stderr.destroyed) {
       try {
         await writeFully(process.stderr, `Failed to write output: ${error instanceof Error ? error.message : String(error)}`);
