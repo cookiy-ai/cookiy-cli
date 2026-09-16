@@ -30,11 +30,11 @@ function tmpToken(content: string): string {
 describe("study run-synthetic-user start", () => {
   let server: MockServer;
   let requestBody: unknown;
+  let requestMeta: unknown;
 
   beforeAll(async () => {
     server = await startMockServer((req, res) => {
-      expect(req.url).toBe("/api/v1/studies/study-1/fake-interview");
-      expect(req.headers.authorization).toBe("Bearer fake-token");
+      requestMeta = { method: req.method, url: req.url, authorization: req.headers.authorization };
 
       let rawBody = "";
       req.setEncoding("utf8");
@@ -54,7 +54,7 @@ describe("study run-synthetic-user start", () => {
     await server.close();
   });
 
-  it("maps --plain-text to the REST persona field", async () => {
+  it("maps --persona to the REST persona field", async () => {
     const tokenPath = tmpToken("fake-token");
 
     const { stdout, stderr, code } = await runCli(
@@ -68,7 +68,7 @@ describe("study run-synthetic-user start", () => {
         "study-1",
         "--persona-count",
         "2",
-        "--plain-text",
+        "--persona",
         "Shanghai coffee consumers",
       ],
       { COOKIY_SERVER_URL: server.url },
@@ -77,6 +77,7 @@ describe("study run-synthetic-user start", () => {
     expect(code).toBe(0);
     expect(stderr).toBe("");
     expect(JSON.parse(stdout)).toEqual({ status: "queued" });
+    expect(requestMeta).toEqual({ method: "POST", url: "/api/v1/studies/study-1/fake-interview", authorization: "Bearer fake-token" });
     expect(requestBody).toEqual({
       persona_count: 2,
       persona: "Shanghai coffee consumers",

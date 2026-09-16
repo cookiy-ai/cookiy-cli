@@ -85,23 +85,19 @@ export function registerQuant(program: Command): void {
 
   quant
     .command("raw-response")
-    .description("raw survey responses as CSV")
+    .description("raw survey responses as JSON (includes csv and row_count)")
     .requiredOption("--survey-id <id>", "numeric sid")
     .option("--include-incomplete", "include incomplete responses", false)
     .action(
       async (opts: { surveyId: string; includeIncomplete?: boolean }) => {
         const query: Record<string, unknown> = {};
         if (!opts.includeIncomplete) query.only_completed = "true";
-        await runV1(async () => {
-          const r = (await v1.get(
+        await runV1(() =>
+          v1.get(
             `/v1/quant/surveys/${encodeURIComponent(opts.surveyId)}/raw-responses`,
             query,
-          )) as { csv?: string } | null;
-          if (r?.csv) {
-            return r.csv;
-          }
-          return r;
-        });
+          ),
+        );
       },
     );
 }

@@ -1,14 +1,27 @@
 import { resolveLoginUrl } from "./config.js";
 
+export class CliError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+    public readonly details?: unknown,
+  ) {
+    super(message);
+    this.name = "CliError";
+  }
+}
+
 function writeFully(stream: NodeJS.WriteStream, text: string): Promise<void> {
   const output = text.endsWith("\n") ? text : `${text}\n`;
 
   return new Promise((resolve, reject) => {
+    stream.once("error", reject);
     stream.write(output, (error) => {
       if (error) {
         reject(error);
         return;
       }
+      stream.removeListener("error", reject);
       resolve();
     });
   });
@@ -26,12 +39,20 @@ export async function exitWithOutput(options: {
     if (options.stderr !== undefined) {
       await writeFully(process.stderr, options.stderr);
     }
-  } catch {
+  } catch (error) {
+    if (!process.stderr.destroyed) {
+      try {
+        await writeFully(process.stderr, `Failed to write output: ${error instanceof Error ? error.message : String(error)}`);
+      } catch {
+        // No usable error stream remains; communicate failure via the exit code.
+      }
+    }
     process.exit(options.code === 0 ? 1 : options.code);
   }
   process.exit(options.code);
 }
 
+// Synchronous input/authentication failures keep their small, immediate diagnostics.
 export function die(msg: string, code = 1): never {
   console.error(msg);
   process.exit(code);

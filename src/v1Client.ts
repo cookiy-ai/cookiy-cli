@@ -1,5 +1,5 @@
 import { runtime, resolveServerBase, API_RPC_TIMEOUT } from "./config.js";
-import { die, dieNoAccess, exitWithOutput } from "./util.js";
+import { die, dieNoAccess, exitWithOutput, CliError } from "./util.js";
 
 export class V1RequestError extends Error {
   constructor(
@@ -45,13 +45,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+// V1 reserves ok/data for its transport envelope, not business fields.
 function unwrapSuccessResponse(value: unknown): unknown {
   return isRecord(value) && value.ok === true && Object.hasOwn(value, "data")
     ? value.data
     : value;
 }
 
-function extractApiError(value: unknown): unknown | undefined {
+function extractApiError(value: unknown): unknown {
   return isRecord(value) && value.ok === false && Object.hasOwn(value, "error")
     ? value.error
     : undefined;
@@ -156,10 +157,10 @@ export const v1 = {
 
 export async function runV1(
   fn: () => Promise<unknown>,
-): Promise<void> {
+): Promise<never> {
   try {
     const result = await fn();
-    await exitWithOutput({
+    return exitWithOutput({
       code: 0,
       stdout:
         result === undefined
@@ -169,20 +170,26 @@ export async function runV1(
             : JSON.stringify(result, null, 2),
     });
   } catch (e: unknown) {
+    if (e instanceof CliError) {
+      return exitWithOutput({
+        code: 1,
+        stderr: JSON.stringify({ code: e.code, message: e.message, details: e.details }, null, 2),
+      });
+    }
     if (e instanceof V1RequestError) {
       const apiError = extractApiError(e.body);
       if (apiError !== undefined) {
-        await exitWithOutput({
+        return exitWithOutput({
           code: 1,
           stderr: JSON.stringify(apiError, null, 2),
         });
       }
-      await exitWithOutput({
+      return exitWithOutput({
         code: 1,
         stderr: [e.message, e.details].filter(Boolean).join("\n"),
       });
     }
-    await exitWithOutput({
+    return exitWithOutput({
       code: 1,
       stderr: (e as Error).message ?? String(e),
     });

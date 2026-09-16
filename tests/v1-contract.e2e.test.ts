@@ -139,7 +139,12 @@ describe("REST response compatibility", () => {
       if (req.url === "/api/v1/studies/study-body-timeout/discussion-guide") {
         res.writeHead(200, { "content-type": "application/json" });
         res.write('{"partial":');
-        setTimeout(() => res.destroy(), 2_000);
+        // Keep the body pending; the client timeout must abort it.
+        return;
+      }
+
+      if (req.url === "/api/v1/quant/surveys/survey-empty/raw-responses?only_completed=true") {
+        res.end(JSON.stringify({ ok: true, data: { survey_id: 124, row_count: 0, csv: "" } }));
         return;
       }
 
@@ -149,6 +154,8 @@ describe("REST response compatibility", () => {
           JSON.stringify({
             ok: true,
             data: {
+              survey_id: 123,
+              row_count: 2,
               csv: `answer,notes\n1,"${LARGE_OUTPUT}"\n2,response-complete`,
             },
           }),
@@ -335,7 +342,7 @@ describe("REST response compatibility", () => {
     });
   });
 
-  it("writes large raw-response CSV through the shared output path", async () => {
+  it("preserves all raw-response fields including large CSV content", async () => {
     const tokenPath = tmpToken("fake-token");
     const expectedCsv = `answer,notes\n1,"${LARGE_OUTPUT}"\n2,response-complete`;
     const { stdout, stderr, code } = await runCli(
@@ -352,12 +359,21 @@ describe("REST response compatibility", () => {
 
     expect(code).toBe(0);
     expect(stderr).toBe("");
-    expect(stdout).toBe(`${expectedCsv}\n`);
+    expect(JSON.parse(stdout)).toEqual({ survey_id: 123, row_count: 2, csv: expectedCsv });
+  });
+
+  it("preserves empty CSV and its metadata", async () => {
+    const { stdout, stderr, code } = await runCli(
+      ["--token", tmpToken("fake-token"), "quant", "raw-response", "--survey-id", "survey-empty"],
+      { COOKIY_SERVER_URL: server.url },
+    );
+    expect(code).toBe(0);
+    expect(stderr).toBe("");
+    expect(JSON.parse(stdout)).toEqual({ survey_id: 124, row_count: 0, csv: "" });
   });
 
   it("keeps the timeout active while reading the response body", async () => {
     const tokenPath = tmpToken("fake-token");
-    const startedAt = Date.now();
     const { stdout, stderr, code } = await runCli(
       [
         "--token",
@@ -377,6 +393,5 @@ describe("REST response compatibility", () => {
     expect(code).toBe(1);
     expect(stdout).toBe("");
     expect(stderr).toBe("[timeout 1s]\n");
-    expect(Date.now() - startedAt).toBeLessThan(1_600);
   });
 });

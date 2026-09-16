@@ -29,12 +29,10 @@ function tmpToken(): string {
 
 describe("study guide update", () => {
   let server: MockServer;
-  const requestBodies: unknown[] = [];
+  const requests: { method?: string; url?: string; body: unknown }[] = [];
 
   beforeAll(async () => {
     server = await startMockServer((req, res) => {
-      expect(req.method).toBe("PATCH");
-      expect(req.url).toBe("/api/v1/studies/study-1/discussion-guide");
 
       let rawBody = "";
       req.setEncoding("utf8");
@@ -42,7 +40,7 @@ describe("study guide update", () => {
         rawBody += chunk;
       });
       req.on("end", () => {
-        requestBodies.push(JSON.parse(rawBody));
+        requests.push({ method: req.method, url: req.url, body: JSON.parse(rawBody) });
         res.statusCode = 200;
         res.setHeader("content-type", "application/json");
         res.end(
@@ -83,106 +81,19 @@ describe("study guide update", () => {
     );
   }
 
-  async function updateGuide(patch: Record<string, unknown>): Promise<void> {
-    const { stderr, code } = await runGuideUpdate(patch);
-
+  it.each([
+    { meta: { sample_size: 8, interview_duration: 15 } },
+    { questions: [{ text: "Who?", sub_questions: [] }], extra: {}, note: null },
+    { "question.text": "literal key", "questions.0.text": "also literal" },
+  ])("sends patch JSON unchanged: %j", async (patch) => {
+    const { stdout, stderr, code } = await runGuideUpdate(patch);
     expect(code).toBe(0);
     expect(stderr).toBe("");
-  }
-
-  it("expands a dotted sample-size path before calling REST", async () => {
-    await updateGuide({ "research_overview.sample_size": 8 });
-
-    expect(requestBodies.at(-1)).toEqual({
-      base_revision: "revision-base",
-      idempotency_key: "request-key",
-      patch: {
-        research_overview: {
-          sample_size: 8,
-        },
-      },
-    });
-  });
-
-  it("expands a dotted interview-duration path before calling REST", async () => {
-    await updateGuide({ "research_overview.interview_duration": 30 });
-
-    expect(requestBodies.at(-1)).toEqual({
-      base_revision: "revision-base",
-      idempotency_key: "request-key",
-      patch: {
-        research_overview: {
-          interview_duration: 30,
-        },
-      },
-    });
-  });
-
-  it("merges dotted siblings into the same nested object", async () => {
-    await updateGuide({
-      "research_overview.sample_size": 8,
-      "research_overview.interview_duration": 30,
-    });
-
-    expect(requestBodies.at(-1)).toEqual({
-      base_revision: "revision-base",
-      idempotency_key: "request-key",
-      patch: {
-        research_overview: {
-          sample_size: 8,
-          interview_duration: 30,
-        },
-      },
-    });
-  });
-
-  it("rejects conflicting parent and child paths", async () => {
-    const requestCount = requestBodies.length;
-    const { stderr, code } = await runGuideUpdate({
-      research_overview: 1,
-      "research_overview.sample_size": 8,
-    });
-
-    expect(code).toBe(1);
-    expect(stderr).toContain("Conflicting patch path");
-    expect(requestBodies).toHaveLength(requestCount);
-  });
-
-  it("rejects explicit empty-object conflicts in either key order", async () => {
-    const requestCount = requestBodies.length;
-    for (const patch of [
-      { research_overview: {}, "research_overview.sample_size": 8 },
-      { "research_overview.sample_size": 8, research_overview: {} },
-    ]) {
-      const { stderr, code } = await runGuideUpdate(patch);
-      expect(code).toBe(1);
-      expect(stderr).toContain("Conflicting patch path");
-    }
-    expect(requestBodies).toHaveLength(requestCount);
-  });
-
-  it("rejects prototype-polluting paths", async () => {
-    const requestCount = requestBodies.length;
-    const { stderr, code } = await runGuideUpdate({
-      "__proto__.polluted": true,
-    });
-
-    expect(code).toBe(1);
-    expect(stderr).toContain("Invalid patch path");
-    expect(requestBodies).toHaveLength(requestCount);
-  });
-
-  it("treats inherited object names as ordinary own path segments", async () => {
-    await updateGuide({ "toString.value": "safe" });
-
-    expect(requestBodies.at(-1)).toEqual({
-      base_revision: "revision-base",
-      idempotency_key: "request-key",
-      patch: {
-        toString: {
-          value: "safe",
-        },
-      },
+    expect(JSON.parse(stdout).applied).toBe(true);
+    expect(requests.at(-1)).toEqual({
+      method: "PATCH",
+      url: "/api/v1/studies/study-1/discussion-guide",
+      body: { base_revision: "revision-base", idempotency_key: "request-key", patch },
     });
   });
 });
