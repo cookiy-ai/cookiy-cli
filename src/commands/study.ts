@@ -5,78 +5,8 @@ import {
   parseJsonArrayOption,
   parseJsonObjectOption,
   die,
-  CliError,
   mergeRawJson,
 } from "../util.js";
-
-function isGuideReady(status: string): boolean {
-  return status === "guide_ready";
-}
-
-function isGuidePending(status: string): boolean {
-  return [
-    "",
-    "queued",
-    "running",
-    "guide_generation_queued",
-    "guide_generation_in_progress",
-  ].includes(status);
-}
-
-function isGuideFailed(status: string): boolean {
-  return ["failed", "guide_generation_failed"].includes(status);
-}
-
-function isReportReady(status: string): boolean {
-  return status === "report_ready";
-}
-
-function isReportPending(status: string): boolean {
-  return [
-    "",
-    "report_not_requested",
-    "report_requested",
-    "report_generation_in_progress",
-  ].includes(status);
-}
-
-function isReportFailed(status: string): boolean {
-  return status === "report_failed";
-}
-
-async function waitForSource(
-  sid: string,
-  source: "guide" | "report",
-  timeoutMs: number,
-  states: {
-    isReady: (status: string) => boolean;
-    isPending: (status: string) => boolean;
-    isFailed: (status: string) => boolean;
-  },
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  const label = source === "guide" ? "Guide" : "Report";
-  while (true) {
-    const activity = (await v1.get(`/v1/studies/${sid}/activity`)) as
-      | { sources?: Partial<Record<"guide" | "report", { status?: string }>> }
-      | null;
-    const state = activity?.sources?.[source] ?? {};
-    const status = state.status ?? "";
-    if (states.isReady(status)) return;
-    if (states.isFailed(status)) {
-      throw new CliError("GENERATION_FAILED", `${label} generation failed`, state);
-    }
-    if (!states.isPending(status)) {
-      throw new CliError("UNEXPECTED_STATUS", `Unexpected ${source} status: ${status}`, state);
-    }
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) {
-      throw new CliError("WAIT_TIMEOUT", `Timed out waiting for ${source} generation`, state);
-    }
-    // Every sleep is followed by a poll, including the final sleep to the deadline.
-    await new Promise((resolve) => setTimeout(resolve, Math.min(15000, remaining)));
-  }
-}
 
 export function registerStudy(program: Command): void {
   const study = program
@@ -162,28 +92,6 @@ export function registerStudy(program: Command): void {
           `/v1/studies/${encodeURIComponent(opts.studyId)}/discussion-guide`,
         ),
       );
-    });
-
-  guide
-    .command("wait")
-    .description("poll until guide generation completes or timeout")
-    .requiredOption("--study-id <uuid>", "study id")
-    .option(
-      "--timeout-ms <n>",
-      "polling timeout in ms (default 120000)",
-      parseIntOption("timeout-ms"),
-      120000,
-    )
-    .action(async (opts: { studyId: string; timeoutMs: number }) => {
-      await runV1(async () => {
-        const sid = encodeURIComponent(opts.studyId);
-        await waitForSource(sid, "guide", opts.timeoutMs, {
-          isReady: isGuideReady,
-          isPending: isGuidePending,
-          isFailed: isGuideFailed,
-        });
-        return v1.get(`/v1/studies/${sid}/discussion-guide`);
-      });
     });
 
   guide
@@ -368,29 +276,5 @@ export function registerStudy(program: Command): void {
           {},
         ),
       );
-    });
-
-  report
-    .command("wait")
-    .description(
-      "poll until report generation completes, then print share link",
-    )
-    .requiredOption("--study-id <uuid>", "study id")
-    .option(
-      "--timeout-ms <n>",
-      "polling timeout in ms (default 300000)",
-      parseIntOption("timeout-ms"),
-      300000,
-    )
-    .action(async (opts: { studyId: string; timeoutMs: number }) => {
-      await runV1(async () => {
-        const sid = encodeURIComponent(opts.studyId);
-        await waitForSource(sid, "report", opts.timeoutMs, {
-          isReady: isReportReady,
-          isPending: isReportPending,
-          isFailed: isReportFailed,
-        });
-        return v1.post(`/v1/studies/${sid}/report/share-link`, {});
-      });
     });
 }
