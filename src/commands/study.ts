@@ -22,21 +22,38 @@ async function waitForReport(
     Math.max(1, Math.floor(timeoutMs / 2)),
   );
   let lastActivity: unknown;
+  const deadlineReached = (error: unknown) =>
+    error instanceof CliError &&
+    error.code === "REQUEST_TIMEOUT" &&
+    Date.now() >= deadline;
+  const exitWithLastActivity = () =>
+    exitWithOutput({
+      code: 1,
+      stdout: JSON.stringify(lastActivity, null, 2),
+    });
 
   while (true) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
-      return exitWithOutput({
-        code: 1,
-        stdout: JSON.stringify(lastActivity, null, 2),
-      });
+      return exitWithLastActivity();
     }
 
-    const activity = await v1.get(
-      `/v1/studies/${studyId}/activity`,
-      undefined,
-      remaining,
-    );
+    let activity: unknown;
+    try {
+      activity = await v1.get(
+        `/v1/studies/${studyId}/activity`,
+        undefined,
+        remaining,
+      );
+    } catch (error) {
+      if (deadlineReached(error) && lastActivity !== undefined) {
+        return exitWithLastActivity();
+      }
+      throw error;
+    }
+    if (Date.now() >= deadline) {
+      return exitWithLastActivity();
+    }
     lastActivity = activity;
     const report = (
       activity as {
@@ -46,7 +63,26 @@ async function waitForReport(
     const status = typeof report.status === "string" ? report.status : "";
 
     if (status === "report_ready") {
-      return v1.post(`/v1/studies/${studyId}/report/share-link`, {});
+      const shareLinkRemaining = deadline - Date.now();
+      if (shareLinkRemaining <= 0) {
+        return exitWithLastActivity();
+      }
+      try {
+        const shareLink = await v1.post(
+          `/v1/studies/${studyId}/report/share-link`,
+          {},
+          shareLinkRemaining,
+        );
+        if (Date.now() >= deadline) {
+          return exitWithLastActivity();
+        }
+        return shareLink;
+      } catch (error) {
+        if (deadlineReached(error)) {
+          return exitWithLastActivity();
+        }
+        throw error;
+      }
     }
     if (status === "report_failed") {
       throw new CliError(
