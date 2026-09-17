@@ -5,8 +5,78 @@ import {
   parseJsonArrayOption,
   parseJsonObjectOption,
   die,
+  CliError,
+  exitWithOutput,
   mergeRawJson,
 } from "../util.js";
+
+const REPORT_POLL_INTERVAL_MS = 15000;
+
+async function waitForReport(
+  studyId: string,
+  timeoutMs: number,
+): Promise<unknown> {
+  const deadline = Date.now() + timeoutMs;
+  const pollIntervalMs = Math.min(
+    REPORT_POLL_INTERVAL_MS,
+    Math.max(1, Math.floor(timeoutMs / 2)),
+  );
+  let lastActivity: unknown;
+
+  while (true) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      return exitWithOutput({
+        code: 1,
+        stdout: JSON.stringify(lastActivity, null, 2),
+      });
+    }
+
+    const activity = await v1.get(
+      `/v1/studies/${studyId}/activity`,
+      undefined,
+      remaining,
+    );
+    lastActivity = activity;
+    const report = (
+      activity as {
+        sources?: { report?: Record<string, unknown> };
+      } | null
+    )?.sources?.report ?? {};
+    const status = typeof report.status === "string" ? report.status : "";
+
+    if (status === "report_ready") {
+      return v1.post(`/v1/studies/${studyId}/report/share-link`, {});
+    }
+    if (status === "report_failed") {
+      throw new CliError(
+        "GENERATION_FAILED",
+        "Report generation failed",
+        report,
+      );
+    }
+    if (status === "report_not_requested") {
+      throw new CliError(
+        "REPORT_NOT_REQUESTED",
+        "Report generation has not been requested",
+        report,
+      );
+    }
+    if (status !== "report_generation_in_progress") {
+      throw new CliError(
+        "UNEXPECTED_STATUS",
+        `Unexpected report status: ${status || "(missing)"}`,
+        report,
+      );
+    }
+
+    const sleepMs = Math.min(
+      pollIntervalMs,
+      Math.max(0, deadline - Date.now()),
+    );
+    await new Promise((resolve) => setTimeout(resolve, sleepMs));
+  }
+}
 
 export function registerStudy(program: Command): void {
   const study = program
@@ -230,7 +300,9 @@ export function registerStudy(program: Command): void {
     );
 
   // study report ...
-  const report = study.command("report").description("study report: generate | content | link");
+  const report = study
+    .command("report")
+    .description("study report: generate | content | link | wait");
 
   report
     .command("generate")
@@ -275,6 +347,25 @@ export function registerStudy(program: Command): void {
           `/v1/studies/${encodeURIComponent(opts.studyId)}/report/share-link`,
           {},
         ),
+      );
+    });
+
+  report
+    .command("wait")
+    .description("wait for report generation, then print its share link")
+    .requiredOption("--study-id <uuid>", "study id")
+    .option(
+      "--timeout-ms <n>",
+      "polling timeout in ms (default 300000)",
+      parseIntOption("timeout-ms"),
+      300000,
+    )
+    .action(async (opts: { studyId: string; timeoutMs: number }) => {
+      if (opts.timeoutMs <= 0) {
+        die("--timeout-ms requires a positive integer");
+      }
+      await runV1(() =>
+        waitForReport(encodeURIComponent(opts.studyId), opts.timeoutMs),
       );
     });
 }

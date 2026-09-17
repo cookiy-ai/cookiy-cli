@@ -82,9 +82,8 @@ describe("E2E — Token file issues (T1–T3) [no network]", () => {
 });
 
 describe("E2E — HTTP 401 from real s-api.cookiy.ai (T4–T5) [real network]", () => {
-  // These tests hit the real production API with a fake token. The server
-  // reliably returns 401 with error_code=UNAUTHORIZED, which exercises the
-  // CLI's JSON authentication-error path. Network-dependent.
+  // These tests hit the real production API with a fake token and assert only
+  // the CLI-owned 401 contract. The server's error field names may evolve.
 
   it("T4: invalid token, billing balance → 401 path, exit 1", async () => {
     const tokenPath = tmpToken("fake-invalid-token-xyz");
@@ -97,7 +96,7 @@ describe("E2E — HTTP 401 from real s-api.cookiy.ai (T4–T5) [real network]", 
     ]);
 
     expect(code).toBe(1);
-    expect(JSON.parse(stderr)).toMatchObject({ code: "UNAUTHORIZED", message: expect.any(String) });
+    expect(JSON.parse(stderr).login_url).toEqual(expect.any(String));
   });
 
   it("T5: invalid token, study list → 401 path, exit 1", async () => {
@@ -111,7 +110,7 @@ describe("E2E — HTTP 401 from real s-api.cookiy.ai (T4–T5) [real network]", 
     ]);
 
     expect(code).toBe(1);
-    expect(JSON.parse(stderr)).toMatchObject({ code: "UNAUTHORIZED", message: expect.any(String) });
+    expect(JSON.parse(stderr).login_url).toEqual(expect.any(String));
   });
 });
 

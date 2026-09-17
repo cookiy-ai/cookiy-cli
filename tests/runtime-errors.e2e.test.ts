@@ -75,10 +75,10 @@ describe("V1 runtime errors use JSON stderr", () => {
     expect(error.message).toEqual(expect.any(String));
     if (mode === "plain") expect(error.details).toBe("upstream unavailable");
     if (mode === "html") expect(error.details).toBe("(HTML body) Upstream unavailable");
-    if (mode === "unauthorized") expect(error.details).toEqual({ login_url: `${server.url}/oauth/cli/start` });
+    if (mode === "unauthorized") expect(error.login_url).toBe(`${server.url}/oauth/cli/start`);
     if (mode === "api-error") expect(error).toEqual({
       ...apiError,
-      details: { ...apiError.details, login_url: `${server.url}/oauth/cli/start` },
+      login_url: `${server.url}/oauth/cli/start`,
     });
     if (mode === "forbidden") expect(error).toEqual(apiError);
     if (mode === "disconnect") expect(error.message).toContain("UND_ERR_SOCKET");
@@ -87,12 +87,14 @@ describe("V1 runtime errors use JSON stderr", () => {
   });
 
   it.each([
-    [{}, {}],
-    [{ details: { login_url: "https://old.example.com/login", reason: "expired" } }, { reason: "expired" }],
-    [{ details: null }, { server_details: null }],
-    [{ details: "expired" }, { server_details: "expired" }],
-    [{ details: ["expired"] }, { server_details: ["expired"] }],
-  ])("401 preserves server details and adds the configured login URL: %j", async (fields, preservedDetails) => {
+    [{}, undefined],
+    [{ login_url: "https://tenant.example.com/top-level" }, "https://tenant.example.com/top-level"],
+    [{ login_url: "https://tenant.example.com/top-level", details: { login_url: "https://tenant.example.com/details" } }, "https://tenant.example.com/top-level"],
+    [{ details: { login_url: "https://tenant.example.com/details", reason: "expired" } }, "https://tenant.example.com/details"],
+    [{ details: null }, undefined],
+    [{ details: "expired" }, undefined],
+    [{ details: ["expired"] }, undefined],
+  ])("401 preserves the server error and selects the effective login URL: %j", async (fields, loginUrl) => {
     const { stdout, stderr, code } = await runCli(
       ["--token", token, "study", "guide", "get", "--study-id", `auth-details-${JSON.stringify(fields)}`],
       { COOKIY_SERVER_URL: server.url },
@@ -102,7 +104,8 @@ describe("V1 runtime errors use JSON stderr", () => {
     expect(JSON.parse(stderr)).toEqual({
       code: "TOKEN_EXPIRED",
       message: "Please sign in again",
-      details: { ...preservedDetails, login_url: `${server.url}/oauth/cli/start` },
+      ...fields,
+      login_url: loginUrl ?? `${server.url}/oauth/cli/start`,
     });
   });
 });

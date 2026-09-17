@@ -45,6 +45,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function resolveErrorLoginUrl(error: Record<string, unknown>): string {
+  if (typeof error.login_url === "string") return error.login_url;
+  if (
+    isRecord(error.details) &&
+    typeof error.details.login_url === "string"
+  ) {
+    return error.details.login_url;
+  }
+  return resolveLoginUrl();
+}
+
 // V1 reserves ok/data for its transport envelope, not business fields.
 function unwrapSuccessResponse(value: unknown): unknown {
   return isRecord(value) && value.ok === true && Object.hasOwn(value, "data")
@@ -77,17 +88,18 @@ async function request(
   opts?: {
     query?: Record<string, unknown>;
     body?: unknown;
-    timeoutSec?: number;
+    timeoutMs?: number;
   },
 ): Promise<unknown> {
   const url = buildUrl(path, opts?.query);
-  const timeoutSec = opts?.timeoutSec ?? API_RPC_TIMEOUT;
+  const defaultTimeoutMs = API_RPC_TIMEOUT * 1000;
+  const timeoutMs = Math.min(opts?.timeoutMs ?? defaultTimeoutMs, defaultTimeoutMs);
   const controller = new AbortController();
   let timedOut = false;
   const timeoutId = setTimeout(() => {
     timedOut = true;
     controller.abort();
-  }, timeoutSec * 1000);
+  }, timeoutMs);
 
   try {
     const headers: Record<string, string> = {
@@ -131,7 +143,10 @@ async function request(
     clearTimeout(timeoutId);
     if (e instanceof V1RequestError) throw e;
     if (timedOut) {
-      throw new CliError("REQUEST_TIMEOUT", `[timeout ${timeoutSec}s]`);
+      const timeoutLabel = timeoutMs % 1000 === 0
+        ? `${timeoutMs / 1000}s`
+        : `${timeoutMs}ms`;
+      throw new CliError("REQUEST_TIMEOUT", `[timeout ${timeoutLabel}]`);
     }
     const err = e as {
       message?: string;
@@ -144,8 +159,8 @@ async function request(
 }
 
 export const v1 = {
-  get: (path: string, query?: Record<string, unknown>) =>
-    request("GET", path, { query }),
+  get: (path: string, query?: Record<string, unknown>, timeoutMs?: number) =>
+    request("GET", path, { query, timeoutMs }),
   post: (path: string, body?: unknown) => request("POST", path, { body }),
   patch: (path: string, body?: unknown) => request("PATCH", path, { body }),
   delete: (path: string) => request("DELETE", path),
@@ -178,11 +193,7 @@ export async function runV1(
           : { code: `HTTP_${e.status}`, message: e.message, details: e.details };
       }
       if (e.status === 401 && isRecord(error)) {
-        // Error details may be any JSON value; preserve non-object details too.
-        const details = isRecord(error.details)
-          ? error.details
-          : error.details === undefined ? {} : { server_details: error.details };
-        error = { ...error, details: { ...details, login_url: resolveLoginUrl() } };
+        error = { ...error, login_url: resolveErrorLoginUrl(error) };
       }
     } else if (e instanceof CliError) {
       error = { code: e.code, message: e.message, details: e.details };

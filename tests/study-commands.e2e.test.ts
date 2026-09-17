@@ -71,9 +71,9 @@ describe("study commands preserve the API boundary", () => {
     expect(requests).toEqual([{ method, url: `/api/v1/studies/study-1/${endpoint}`, body }]);
   });
 
-  it.each(["guide", "report"])("rejects the removed %s wait command before making any request", async (kind) => {
+  it("rejects the removed guide wait command before making any request", async () => {
     const { stdout, stderr, code } = await runCli(
-      ["--token", token, "study", kind, "wait", "--study-id", "study-1"],
+      ["--token", token, "study", "guide", "wait", "--study-id", "study-1"],
       { COOKIY_SERVER_URL: server.url },
     );
 
