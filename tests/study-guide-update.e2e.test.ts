@@ -82,18 +82,40 @@ describe("study guide update", () => {
   }
 
   it.each([
-    { meta: { sample_size: 8, interview_duration: 15 } },
-    { questions: [{ text: "Who?", sub_questions: [] }], extra: {}, note: null },
-    { "question.text": "literal key", "questions.0.text": "also literal" },
-  ])("sends patch JSON unchanged: %j", async (patch) => {
-    const { stdout, stderr, code } = await runGuideUpdate(patch);
+    {
+      name: "nested JSON",
+      input: { meta: { sample_size: 8, interview_duration: 15 } },
+      expected: { meta: { sample_size: 8, interview_duration: 15 } },
+    },
+    {
+      name: "dotted keys",
+      input: { "meta.sample_size": 8, "meta.interview_duration": 15 },
+      expected: { meta: { sample_size: 8, interview_duration: 15 } },
+    },
+    {
+      name: "nested values inside dotted keys",
+      input: { "participant_screening.questions": [{ text: "Who?" }] },
+      expected: { participant_screening: { questions: [{ text: "Who?" }] } },
+    },
+    {
+      name: "prototype-like path segments",
+      input: JSON.parse('{"__proto__.polluted":true}'),
+      expected: JSON.parse('{"__proto__":{"polluted":true}}'),
+    },
+  ])("normalizes $name before sending the patch", async ({ input, expected }) => {
+    const { stdout, stderr, code } = await runGuideUpdate(input);
     expect(code).toBe(0);
     expect(stderr).toBe("");
     expect(JSON.parse(stdout).applied).toBe(true);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
     expect(requests.at(-1)).toEqual({
       method: "PATCH",
       url: "/api/v1/studies/study-1/discussion-guide",
-      body: { base_revision: "revision-base", idempotency_key: "request-key", patch },
+      body: {
+        base_revision: "revision-base",
+        idempotency_key: "request-key",
+        patch: expected,
+      },
     });
   });
 });

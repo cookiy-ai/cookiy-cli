@@ -12,6 +12,38 @@ import {
 
 const REPORT_POLL_INTERVAL_MS = 15000;
 
+function expandDottedKeys(
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  const result = Object.create(null) as Record<string, unknown>;
+
+  for (const [key, value] of Object.entries(input)) {
+    const parts = key.split(".");
+    if (parts.length === 1) {
+      result[key] =
+        value !== null && typeof value === "object" && !Array.isArray(value)
+          ? expandDottedKeys(value as Record<string, unknown>)
+          : value;
+      continue;
+    }
+
+    let cursor = result;
+    for (const part of parts.slice(0, -1)) {
+      if (
+        cursor[part] === null ||
+        typeof cursor[part] !== "object" ||
+        Array.isArray(cursor[part])
+      ) {
+        cursor[part] = Object.create(null);
+      }
+      cursor = cursor[part] as Record<string, unknown>;
+    }
+    cursor[parts.at(-1)!] = value;
+  }
+
+  return result;
+}
+
 async function waitForReport(
   studyId: string,
   timeoutMs: number,
@@ -223,7 +255,7 @@ export function registerStudy(program: Command): void {
         const body: Record<string, unknown> = {
           base_revision: opts.baseRevision,
           idempotency_key: opts.idempotencyKey,
-          patch: opts.json,
+          patch: expandDottedKeys(opts.json),
         };
         if (opts.changeMessage !== undefined)
           body.change_message = opts.changeMessage;
