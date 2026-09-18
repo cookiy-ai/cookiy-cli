@@ -5,30 +5,96 @@ import {
   parseJsonArrayOption,
   parseJsonObjectOption,
   die,
+  CliError,
+  exitWithOutput,
   mergeRawJson,
 } from "../util.js";
 
-function isGuidePending(status: string): boolean {
-  return [
-    "",
-    "queued",
-    "running",
-    "guide_generation_queued",
-    "guide_generation_in_progress",
-  ].includes(status);
+const REPORT_POLL_INTERVAL_MS = 15000;
+
+function expandDottedKeys(
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  const result = Object.create(null) as Record<string, unknown>;
+
+  for (const [key, value] of Object.entries(input)) {
+    const parts = key.split(".");
+    if (parts.length === 1) {
+      result[key] =
+        value !== null && typeof value === "object" && !Array.isArray(value)
+          ? expandDottedKeys(value as Record<string, unknown>)
+          : value;
+      continue;
+    }
+
+    let cursor = result;
+    for (const part of parts.slice(0, -1)) {
+      if (
+        cursor[part] === null ||
+        typeof cursor[part] !== "object" ||
+        Array.isArray(cursor[part])
+      ) {
+        cursor[part] = Object.create(null);
+      }
+      cursor = cursor[part] as Record<string, unknown>;
+    }
+    cursor[parts.at(-1)!] = value;
+  }
+
+  return result;
 }
 
-function isGuideFailed(status: string): boolean {
-  return ["failed", "guide_generation_failed"].includes(status);
-}
+async function waitForReport(
+  studyId: string,
+  timeoutMs: number,
+): Promise<unknown> {
+  const deadline = Date.now() + timeoutMs;
 
-function isReportPending(status: string): boolean {
-  return [
-    "",
-    "report_not_requested",
-    "report_requested",
-    "report_generation_in_progress",
-  ].includes(status);
+  while (true) {
+    const activity = await v1.get(`/v1/studies/${studyId}/activity`);
+    const report = (
+      activity as {
+        sources?: { report?: Record<string, unknown> };
+      } | null
+    )?.sources?.report ?? {};
+    const status = typeof report.status === "string" ? report.status : "";
+
+    if (status === "report_ready") {
+      return v1.post(`/v1/studies/${studyId}/report/share-link`, {});
+    }
+    if (status === "report_failed") {
+      throw new CliError(
+        "GENERATION_FAILED",
+        "Report generation failed",
+        report,
+      );
+    }
+    if (status === "report_not_requested") {
+      throw new CliError(
+        "REPORT_NOT_REQUESTED",
+        "Report generation has not been requested",
+        report,
+      );
+    }
+    if (status !== "report_generation_in_progress") {
+      throw new CliError(
+        "UNEXPECTED_STATUS",
+        `Unexpected report status: ${status || "(missing)"}`,
+        report,
+      );
+    }
+
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      return exitWithOutput({
+        code: 1,
+        stdout: JSON.stringify(activity, null, 2),
+      });
+    }
+
+    const sleepMs = Math.min(REPORT_POLL_INTERVAL_MS, remaining);
+    await new Promise((resolve) => setTimeout(resolve, sleepMs));
+  }
 }
 
 export function registerStudy(program: Command): void {
@@ -118,46 +184,6 @@ export function registerStudy(program: Command): void {
     });
 
   guide
-    .command("wait")
-    .description("poll until guide generation completes or timeout")
-    .requiredOption("--study-id <uuid>", "study id")
-    .option(
-      "--timeout-ms <n>",
-      "polling timeout in ms (default 120000)",
-      parseIntOption("timeout-ms"),
-      120000,
-    )
-    .action(async (opts: { studyId: string; timeoutMs: number }) => {
-      await runV1(async () => {
-        const deadline = Date.now() + opts.timeoutMs;
-        const sid = encodeURIComponent(opts.studyId);
-        let guideObj: unknown = {};
-        while (true) {
-          const activity = (await v1.get(`/v1/studies/${sid}/activity`)) as
-            | { sources?: { guide?: unknown } }
-            | null;
-          guideObj = activity?.sources?.guide ?? {};
-          const status =
-            (guideObj as { status?: string } | null)?.status ?? "";
-          if (isGuideFailed(status)) {
-            console.error(JSON.stringify(guideObj, null, 2));
-            throw new Error("Guide generation failed");
-          }
-          if (!isGuidePending(status)) {
-            return v1.get(`/v1/studies/${sid}/discussion-guide`);
-          }
-          if (Date.now() >= deadline) {
-            console.log(JSON.stringify(guideObj, null, 2));
-            throw new Error(
-              `Timeout waiting for guide generation (${opts.timeoutMs}ms)`,
-            );
-          }
-          await new Promise((r) => setTimeout(r, 15000));
-        }
-      });
-    });
-
-  guide
     .command("update")
     .description("apply patch to discussion guide")
     .requiredOption("--study-id <uuid>", "study id")
@@ -180,7 +206,7 @@ export function registerStudy(program: Command): void {
         const body: Record<string, unknown> = {
           base_revision: opts.baseRevision,
           idempotency_key: opts.idempotencyKey,
-          patch: opts.json,
+          patch: expandDottedKeys(opts.json),
         };
         if (opts.changeMessage !== undefined)
           body.change_message = opts.changeMessage;
@@ -273,16 +299,16 @@ export function registerStudy(program: Command): void {
       "number of personas",
       parseIntOption("persona-count"),
     )
-    .option("--plain-text <s>", "persona / profile description")
+    .option("--persona <s>", "persona / profile description")
     .action(
       async (opts: {
         studyId: string;
         personaCount?: number;
-        plainText?: string;
+        persona?: string;
       }) => {
         const body: Record<string, unknown> = {};
         if (opts.personaCount !== undefined) body.persona_count = opts.personaCount;
-        if (opts.plainText !== undefined) body.plain_text = opts.plainText;
+        if (opts.persona !== undefined) body.persona = opts.persona;
         await runV1(() =>
           v1.post(
             `/v1/studies/${encodeURIComponent(opts.studyId)}/fake-interview`,
@@ -293,7 +319,9 @@ export function registerStudy(program: Command): void {
     );
 
   // study report ...
-  const report = study.command("report").description("study report: generate | content | link");
+  const report = study
+    .command("report")
+    .description("study report: generate | content | link | wait");
 
   report
     .command("generate")
@@ -343,9 +371,7 @@ export function registerStudy(program: Command): void {
 
   report
     .command("wait")
-    .description(
-      "poll until report generation completes, then print share link",
-    )
+    .description("wait for report generation, then print its share link")
     .requiredOption("--study-id <uuid>", "study id")
     .option(
       "--timeout-ms <n>",
@@ -354,35 +380,11 @@ export function registerStudy(program: Command): void {
       300000,
     )
     .action(async (opts: { studyId: string; timeoutMs: number }) => {
-      await runV1(async () => {
-        const deadline = Date.now() + opts.timeoutMs;
-        const sid = encodeURIComponent(opts.studyId);
-        let reportObj: unknown = {};
-        while (true) {
-          const activity = (await v1.get(`/v1/studies/${sid}/activity`)) as
-            | { sources?: { report?: unknown } }
-            | null;
-          reportObj = activity?.sources?.report ?? {};
-          const status =
-            (reportObj as { status?: string } | null)?.status ?? "";
-          if (status === "report_ready") break;
-          if (status === "report_failed") {
-            console.error(JSON.stringify(reportObj, null, 2));
-            throw new Error("Report generation failed");
-          }
-          if (!isReportPending(status)) {
-            console.error(JSON.stringify(reportObj, null, 2));
-            throw new Error(`Unexpected report status: ${status}`);
-          }
-          if (Date.now() >= deadline) {
-            console.error(JSON.stringify(reportObj, null, 2));
-            throw new Error(
-              `Timeout waiting for report generation (${opts.timeoutMs}ms)`,
-            );
-          }
-          await new Promise((r) => setTimeout(r, 15000));
-        }
-        return await v1.post(`/v1/studies/${sid}/report/share-link`, {});
-      });
+      if (opts.timeoutMs <= 0) {
+        die("--timeout-ms requires a positive integer");
+      }
+      await runV1(() =>
+        waitForReport(encodeURIComponent(opts.studyId), opts.timeoutMs),
+      );
     });
 }
