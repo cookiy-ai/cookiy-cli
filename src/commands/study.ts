@@ -49,44 +49,9 @@ async function waitForReport(
   timeoutMs: number,
 ): Promise<unknown> {
   const deadline = Date.now() + timeoutMs;
-  const pollIntervalMs = Math.min(
-    REPORT_POLL_INTERVAL_MS,
-    Math.max(1, Math.floor(timeoutMs / 2)),
-  );
-  let lastActivity: unknown;
-  const deadlineReached = (error: unknown) =>
-    error instanceof CliError &&
-    error.code === "REQUEST_TIMEOUT" &&
-    Date.now() >= deadline;
-  const exitWithLastActivity = () =>
-    exitWithOutput({
-      code: 1,
-      stdout: JSON.stringify(lastActivity, null, 2),
-    });
 
   while (true) {
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) {
-      return exitWithLastActivity();
-    }
-
-    let activity: unknown;
-    try {
-      activity = await v1.get(
-        `/v1/studies/${studyId}/activity`,
-        undefined,
-        remaining,
-      );
-    } catch (error) {
-      if (deadlineReached(error) && lastActivity !== undefined) {
-        return exitWithLastActivity();
-      }
-      throw error;
-    }
-    if (Date.now() >= deadline) {
-      return exitWithLastActivity();
-    }
-    lastActivity = activity;
+    const activity = await v1.get(`/v1/studies/${studyId}/activity`);
     const report = (
       activity as {
         sources?: { report?: Record<string, unknown> };
@@ -95,26 +60,7 @@ async function waitForReport(
     const status = typeof report.status === "string" ? report.status : "";
 
     if (status === "report_ready") {
-      const shareLinkRemaining = deadline - Date.now();
-      if (shareLinkRemaining <= 0) {
-        return exitWithLastActivity();
-      }
-      try {
-        const shareLink = await v1.post(
-          `/v1/studies/${studyId}/report/share-link`,
-          {},
-          shareLinkRemaining,
-        );
-        if (Date.now() >= deadline) {
-          return exitWithLastActivity();
-        }
-        return shareLink;
-      } catch (error) {
-        if (deadlineReached(error)) {
-          return exitWithLastActivity();
-        }
-        throw error;
-      }
+      return v1.post(`/v1/studies/${studyId}/report/share-link`, {});
     }
     if (status === "report_failed") {
       throw new CliError(
@@ -138,10 +84,15 @@ async function waitForReport(
       );
     }
 
-    const sleepMs = Math.min(
-      pollIntervalMs,
-      Math.max(0, deadline - Date.now()),
-    );
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      return exitWithOutput({
+        code: 1,
+        stdout: JSON.stringify(activity, null, 2),
+      });
+    }
+
+    const sleepMs = Math.min(REPORT_POLL_INTERVAL_MS, remaining);
     await new Promise((resolve) => setTimeout(resolve, sleepMs));
   }
 }

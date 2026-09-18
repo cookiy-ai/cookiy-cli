@@ -88,30 +88,15 @@ async function request(
   opts?: {
     query?: Record<string, unknown>;
     body?: unknown;
-    timeoutMs?: number;
   },
 ): Promise<unknown> {
   const url = buildUrl(path, opts?.query);
-  const defaultTimeoutMs = API_RPC_TIMEOUT * 1000;
-  const timeoutMs = Math.min(opts?.timeoutMs ?? defaultTimeoutMs, defaultTimeoutMs);
-  const requestDeadline = Date.now() + timeoutMs;
   const controller = new AbortController();
   let timedOut = false;
-  const timeoutLabel = timeoutMs % 1000 === 0
-    ? `${timeoutMs / 1000}s`
-    : `${timeoutMs}ms`;
-  const timeoutError = () =>
-    new CliError("REQUEST_TIMEOUT", `[timeout ${timeoutLabel}]`);
-  const throwIfTimedOut = () => {
-    if (!timedOut && Date.now() < requestDeadline) return;
-    timedOut = true;
-    controller.abort();
-    throw timeoutError();
-  };
   const timeoutId = setTimeout(() => {
     timedOut = true;
     controller.abort();
-  }, timeoutMs);
+  }, API_RPC_TIMEOUT * 1000);
 
   try {
     const headers: Record<string, string> = {
@@ -128,7 +113,6 @@ async function request(
     });
 
     const text = await res.text();
-    throwIfTimedOut();
     let parsed: unknown = undefined;
     if (text.trim()) {
       try {
@@ -137,7 +121,6 @@ async function request(
         parsed = text;
       }
     }
-    throwIfTimedOut();
 
     if (res.status < 200 || res.status >= 300) {
       const bodyDisplay = formatBody(parsed, text);
@@ -147,17 +130,15 @@ async function request(
           : undefined;
       const head = `[HTTP ${res.status}]`;
       const msg = serverMessage ? `${head} ${String(serverMessage)}` : head;
-      throwIfTimedOut();
       throw new V1RequestError(res.status, msg, parsed, bodyDisplay ?? undefined);
     }
 
-    const result = unwrapSuccessResponse(parsed);
-    throwIfTimedOut();
-    return result;
+    return unwrapSuccessResponse(parsed);
   } catch (e: unknown) {
     if (e instanceof V1RequestError) throw e;
-    if (e instanceof CliError) throw e;
-    if (timedOut || Date.now() >= requestDeadline) throw timeoutError();
+    if (timedOut) {
+      throw new CliError("REQUEST_TIMEOUT", `[timeout ${API_RPC_TIMEOUT}s]`);
+    }
     const err = e as {
       message?: string;
       cause?: { code?: string; message?: string };
@@ -171,10 +152,9 @@ async function request(
 }
 
 export const v1 = {
-  get: (path: string, query?: Record<string, unknown>, timeoutMs?: number) =>
-    request("GET", path, { query, timeoutMs }),
-  post: (path: string, body?: unknown, timeoutMs?: number) =>
-    request("POST", path, { body, timeoutMs }),
+  get: (path: string, query?: Record<string, unknown>) =>
+    request("GET", path, { query }),
+  post: (path: string, body?: unknown) => request("POST", path, { body }),
   patch: (path: string, body?: unknown) => request("PATCH", path, { body }),
   delete: (path: string) => request("DELETE", path),
 };
