@@ -6,7 +6,6 @@ import {
   parseJsonObjectOption,
   die,
   CliError,
-  exitWithOutput,
   mergeRawJson,
 } from "../util.js";
 
@@ -86,10 +85,7 @@ async function waitForReport(
 
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
-      return exitWithOutput({
-        code: 1,
-        stdout: JSON.stringify(activity, null, 2),
-      });
+      throw new CliError("WAIT_TIMEOUT", `Timed out after ${timeoutMs}ms`, activity);
     }
 
     const sleepMs = Math.min(REPORT_POLL_INTERVAL_MS, remaining);
@@ -300,15 +296,18 @@ export function registerStudy(program: Command): void {
       parseIntOption("persona-count"),
     )
     .option("--persona <s>", "persona / profile description")
+    .option("--plain-text <s>", "deprecated alias for --persona")
     .action(
       async (opts: {
         studyId: string;
         personaCount?: number;
         persona?: string;
+        plainText?: string;
       }) => {
         const body: Record<string, unknown> = {};
         if (opts.personaCount !== undefined) body.persona_count = opts.personaCount;
-        if (opts.persona !== undefined) body.persona = opts.persona;
+        const persona = opts.persona ?? opts.plainText;
+        if (persona !== undefined) body.persona = persona;
         await runV1(() =>
           v1.post(
             `/v1/studies/${encodeURIComponent(opts.studyId)}/fake-interview`,

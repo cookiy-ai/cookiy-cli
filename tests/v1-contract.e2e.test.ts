@@ -342,7 +342,7 @@ describe("REST response compatibility", () => {
     });
   });
 
-  it("preserves all raw-response fields including large CSV content", async () => {
+  it("prints complete raw CSV larger than the stdout pipe buffer", async () => {
     const tokenPath = tmpToken("fake-token");
     const expectedCsv = `answer,notes\n1,"${LARGE_OUTPUT}"\n2,response-complete`;
     const { stdout, stderr, code } = await runCli(
@@ -359,17 +359,17 @@ describe("REST response compatibility", () => {
 
     expect(code).toBe(0);
     expect(stderr).toBe("");
-    expect(JSON.parse(stdout)).toEqual({ survey_id: 123, row_count: 2, csv: expectedCsv });
+    expect(stdout).toBe(`${expectedCsv}\n`);
   });
 
-  it("preserves empty CSV and its metadata", async () => {
+  it("prints empty CSV as text rather than a JSON object", async () => {
     const { stdout, stderr, code } = await runCli(
       ["--token", tmpToken("fake-token"), "quant", "raw-response", "--survey-id", "survey-empty"],
       { COOKIY_SERVER_URL: server.url },
     );
     expect(code).toBe(0);
     expect(stderr).toBe("");
-    expect(JSON.parse(stdout)).toEqual({ survey_id: 124, row_count: 0, csv: "" });
+    expect(stdout).toBe("\n");
   });
 
   it("keeps the timeout active while reading the response body", async () => {

@@ -54,7 +54,12 @@ describe("study run-synthetic-user start", () => {
     await server.close();
   });
 
-  it("maps --persona to the REST persona field", async () => {
+  it.each([
+    ["--persona", "Shanghai coffee consumers"],
+    ["--plain-text", "Shanghai coffee consumers"],
+    ["--plain-text", "legacy description", "--persona", "Shanghai coffee consumers"],
+    ["--persona", "Shanghai coffee consumers", "--plain-text", "legacy description"],
+  ])("maps persona arguments %j to the REST persona field", async (...flags) => {
     const tokenPath = tmpToken("fake-token");
 
     const { stdout, stderr, code } = await runCli(
@@ -68,8 +73,7 @@ describe("study run-synthetic-user start", () => {
         "study-1",
         "--persona-count",
         "2",
-        "--persona",
-        "Shanghai coffee consumers",
+        ...flags,
       ],
       { COOKIY_SERVER_URL: server.url },
     );

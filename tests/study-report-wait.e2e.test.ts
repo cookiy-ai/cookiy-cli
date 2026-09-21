@@ -114,7 +114,7 @@ describe("study report wait", () => {
     ]);
   });
 
-  it("prints the latest complete activity to stdout when the wait times out", async () => {
+  it("returns WAIT_TIMEOUT on stderr with the latest complete activity", async () => {
     const result = await runCli(
       [
         "--token",
@@ -131,11 +131,15 @@ describe("study report wait", () => {
     );
 
     expect(result.code).toBe(1);
-    expect(result.stderr).toBe("");
-    expect(JSON.parse(result.stdout)).toEqual({
-      study_id: "timeout",
-      current_stage: "report_generation_in_progress",
-      sources: { report: { status: "report_generation_in_progress" } },
+    expect(result.stdout).toBe("");
+    expect(JSON.parse(result.stderr)).toEqual({
+      code: "WAIT_TIMEOUT",
+      message: "Timed out after 100ms",
+      details: {
+        study_id: "timeout",
+        current_stage: "report_generation_in_progress",
+        sources: { report: { status: "report_generation_in_progress" } },
+      },
     });
     expect(requests.length).toBeGreaterThanOrEqual(1);
     expect(requests.every((url) => url === "/api/v1/studies/timeout/activity")).toBe(true);
