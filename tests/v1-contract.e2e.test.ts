@@ -79,11 +79,10 @@ describe("REST response compatibility", () => {
               message: "Insufficient balance for synthetic interview",
               details: {
                 feature: "synthetic",
-                payment_required: true,
+                balance_cents: 0,
                 total_cost_cents: 20,
                 shortfall_cents: 20,
                 quote: { required_personas: 1 },
-                automatic_top_up: null,
                 checkout_url: null,
               },
             },
@@ -100,7 +99,6 @@ describe("REST response compatibility", () => {
             data: {
               status: "confirmation_required",
               confirmation_token: "confirmation-token",
-              status_message: "Review before confirming.",
             },
           }),
         );
@@ -143,23 +141,34 @@ describe("REST response compatibility", () => {
         return;
       }
 
-      if (req.url === "/api/v1/quant/surveys/survey-empty/raw-responses?only_completed=true") {
-        res.end(JSON.stringify({ ok: true, data: { survey_id: 124, row_count: 0, csv: "" } }));
+      if (req.url === "/api/v1/quant/surveys/survey-empty/raw-responses?format=csv&only_completed=true") {
+        res.setHeader("content-type", "text/csv; charset=utf-8");
+        res.end("");
         return;
       }
 
-      if (req.url === "/api/v1/quant/surveys/survey-large/raw-responses?only_completed=true") {
+      if (req.url === "/api/v1/quant/surveys/survey-large/raw-responses?format=csv&only_completed=true") {
         res.statusCode = 200;
-        res.end(
-          JSON.stringify({
-            ok: true,
-            data: {
-              survey_id: 123,
-              row_count: 2,
-              csv: `answer,notes\n1,"${LARGE_OUTPUT}"\n2,response-complete`,
-            },
-          }),
-        );
+        res.setHeader("content-type", "text/csv; charset=utf-8");
+        res.end(`answer,notes\n1,"${LARGE_OUTPUT}"\n2,response-complete`);
+        return;
+      }
+
+      if (req.url === "/api/v1/quant/surveys/survey-json-looking/raw-responses?format=csv&only_completed=true") {
+        res.setHeader("content-type", "text/csv; charset=utf-8");
+        res.end('"foo"');
+        return;
+      }
+
+      if (req.url === "/api/v1/quant/surveys/survey-all/raw-responses?format=csv") {
+        res.setHeader("content-type", "text/csv; charset=utf-8");
+        res.end("answer\ncomplete\nincomplete");
+        return;
+      }
+
+      if (req.url === "/api/v1/quant/surveys/survey-error/raw-responses?format=csv&only_completed=true") {
+        res.statusCode = 402;
+        res.end(JSON.stringify({ ok: false, error: { code: "INSUFFICIENT_BALANCE", message: "Not enough balance" } }));
         return;
       }
 
@@ -280,11 +289,10 @@ describe("REST response compatibility", () => {
       message: "Insufficient balance for synthetic interview",
       details: {
         feature: "synthetic",
-        payment_required: true,
+        balance_cents: 0,
         total_cost_cents: 20,
         shortfall_cents: 20,
         quote: { required_personas: 1 },
-        automatic_top_up: null,
         checkout_url: null,
       },
     });
@@ -311,7 +319,6 @@ describe("REST response compatibility", () => {
     expect(JSON.parse(stdout)).toEqual({
       status: "confirmation_required",
       confirmation_token: "confirmation-token",
-      status_message: "Review before confirming.",
     });
   });
 
@@ -370,6 +377,36 @@ describe("REST response compatibility", () => {
     expect(code).toBe(0);
     expect(stderr).toBe("");
     expect(stdout).toBe("\n");
+  });
+
+  it("does not parse JSON-looking CSV content", async () => {
+    const { stdout, stderr, code } = await runCli(
+      ["--token", tmpToken("fake-token"), "quant", "raw-response", "--survey-id", "survey-json-looking"],
+      { COOKIY_SERVER_URL: server.url },
+    );
+    expect(code).toBe(0);
+    expect(stderr).toBe("");
+    expect(stdout).toBe('"foo"\n');
+  });
+
+  it("passes include-incomplete without only_completed", async () => {
+    const { stdout, stderr, code } = await runCli(
+      ["--token", tmpToken("fake-token"), "quant", "raw-response", "--survey-id", "survey-all", "--include-incomplete"],
+      { COOKIY_SERVER_URL: server.url },
+    );
+    expect(code).toBe(0);
+    expect(stderr).toBe("");
+    expect(stdout).toBe("answer\ncomplete\nincomplete\n");
+  });
+
+  it("keeps JSON errors when requesting CSV", async () => {
+    const { stdout, stderr, code } = await runCli(
+      ["--token", tmpToken("fake-token"), "quant", "raw-response", "--survey-id", "survey-error"],
+      { COOKIY_SERVER_URL: server.url },
+    );
+    expect(code).toBe(1);
+    expect(stdout).toBe("");
+    expect(JSON.parse(stderr)).toEqual({ code: "INSUFFICIENT_BALANCE", message: "Not enough balance" });
   });
 
   it("keeps the timeout active while reading the response body", async () => {

@@ -90,15 +90,14 @@ export function registerQuant(program: Command): void {
     .option("--include-incomplete", "include incomplete responses", false)
     .action(
       async (opts: { surveyId: string; includeIncomplete?: boolean }) => {
-        const query: Record<string, unknown> = {};
+        const query: Record<string, unknown> = { format: "csv" };
         if (!opts.includeIncomplete) query.only_completed = "true";
-        await runV1(async () => {
-          const r = (await v1.get(
+        await runV1(() =>
+          v1.get(
             `/v1/quant/surveys/${encodeURIComponent(opts.surveyId)}/raw-responses`,
             query,
-          )) as { csv?: string } | null;
-          return typeof r?.csv === "string" ? r.csv : r;
-        });
+          ),
+        );
       },
     );
 }

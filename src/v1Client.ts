@@ -113,6 +113,13 @@ async function request(
     });
 
     const text = await res.text();
+    if (
+      res.status >= 200 &&
+      res.status < 300 &&
+      res.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() === "text/csv"
+    ) {
+      return text;
+    }
     let parsed: unknown = undefined;
     if (text.trim()) {
       try {
