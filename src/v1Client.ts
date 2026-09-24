@@ -1,5 +1,5 @@
-import { runtime, resolveServerBase, API_RPC_TIMEOUT } from "./config.js";
-import { die, dieNoAccess } from "./util.js";
+import { runtime, resolveServerBase, resolveLoginUrl, API_RPC_TIMEOUT } from "./config.js";
+import { exitWithOutput, CliError } from "./util.js";
 
 export class V1RequestError extends Error {
   constructor(
@@ -41,6 +41,34 @@ function formatBody(parsed: unknown, text: string): string | null {
   return truncate(trimmed);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function resolveErrorLoginUrl(error: Record<string, unknown>): string {
+  if (typeof error.login_url === "string") return error.login_url;
+  if (
+    isRecord(error.details) &&
+    typeof error.details.login_url === "string"
+  ) {
+    return error.details.login_url;
+  }
+  return resolveLoginUrl();
+}
+
+// V1 reserves ok/data for its transport envelope, not business fields.
+function unwrapSuccessResponse(value: unknown): unknown {
+  return isRecord(value) && value.ok === true && Object.hasOwn(value, "data")
+    ? value.data
+    : value;
+}
+
+function extractApiError(value: unknown): unknown {
+  return isRecord(value) && value.ok === false && Object.hasOwn(value, "error")
+    ? value.error
+    : undefined;
+}
+
 function buildUrl(path: string, query?: Record<string, unknown>): string {
   const base = resolveServerBase().replace(/\/$/, "");
   const rel = path.startsWith("/") ? path : `/${path}`;
@@ -60,18 +88,15 @@ async function request(
   opts?: {
     query?: Record<string, unknown>;
     body?: unknown;
-    timeoutSec?: number;
   },
 ): Promise<unknown> {
   const url = buildUrl(path, opts?.query);
-  const timeoutSec = opts?.timeoutSec ?? API_RPC_TIMEOUT;
   const controller = new AbortController();
   let timedOut = false;
   const timeoutId = setTimeout(() => {
     timedOut = true;
     controller.abort();
-  }, timeoutSec * 1000);
-  // const where = `${method} ${url}`;
+  }, API_RPC_TIMEOUT * 1000);
 
   try {
     const headers: Record<string, string> = {
@@ -86,10 +111,16 @@ async function request(
       body: opts?.body !== undefined ? JSON.stringify(opts.body) : undefined,
       signal: controller.signal,
     });
-    clearTimeout(timeoutId);
 
     const text = await res.text();
-    let parsed: unknown = null;
+    if (
+      res.status >= 200 &&
+      res.status < 300 &&
+      res.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() === "text/csv"
+    ) {
+      return text;
+    }
+    let parsed: unknown = undefined;
     if (text.trim()) {
       try {
         parsed = JSON.parse(text);
@@ -98,36 +129,32 @@ async function request(
       }
     }
 
-    const bodyDisplay = formatBody(parsed, text);
-
-    if (res.status === 401) {
-      dieNoAccess(bodyDisplay ?? undefined);
-    }
-
     if (res.status < 200 || res.status >= 300) {
+      const bodyDisplay = formatBody(parsed, text);
       const serverMessage =
         parsed && typeof parsed === "object"
           ? (parsed as { message?: unknown }).message
           : undefined;
-      const head = `[HTTP ${res.status}]`; // ` ${where}`
+      const head = `[HTTP ${res.status}]`;
       const msg = serverMessage ? `${head} ${String(serverMessage)}` : head;
       throw new V1RequestError(res.status, msg, parsed, bodyDisplay ?? undefined);
     }
 
-    return parsed;
+    return unwrapSuccessResponse(parsed);
   } catch (e: unknown) {
-    clearTimeout(timeoutId);
     if (e instanceof V1RequestError) throw e;
     if (timedOut) {
-      die(`[timeout ${timeoutSec}s]`); // ` ${where}`
+      throw new CliError("REQUEST_TIMEOUT", `[timeout ${API_RPC_TIMEOUT}s]`);
     }
     const err = e as {
       message?: string;
       cause?: { code?: string; message?: string };
     };
     const reason =
-      err.cause?.code ?? err.cause?.message ?? err.message ?? String(e);
-    die(`[fetch error] ${reason}`); // ` ${where} —`
+      err?.cause?.code ?? err?.cause?.message ?? err?.message ?? String(e);
+    throw new CliError("NETWORK_ERROR", `[fetch error] ${reason}`);
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -141,22 +168,41 @@ export const v1 = {
 
 export async function runV1(
   fn: () => Promise<unknown>,
-): Promise<void> {
+): Promise<never> {
   try {
     const result = await fn();
-    if (result !== undefined && result !== null) {
-      console.log(
-        typeof result === "string" ? result : JSON.stringify(result, null, 2),
-      );
-    }
-    process.exit(0);
+    return exitWithOutput({
+      code: 0,
+      stdout:
+        result === undefined
+          ? undefined
+          : typeof result === "string"
+            ? result
+            : JSON.stringify(result, null, 2),
+    });
   } catch (e: unknown) {
+    let error: unknown;
     if (e instanceof V1RequestError) {
-      console.error(e.message);
-      if (e.details) console.error(e.details);
-      process.exit(1);
+      error = extractApiError(e.body);
+      if (error === undefined) {
+        error = e.status === 401
+          ? {
+              code: "UNAUTHORIZED",
+              message: "Access denied — token is missing or expired.",
+            }
+          : { code: `HTTP_${e.status}`, message: e.message, details: e.details };
+      }
+      if (e.status === 401 && isRecord(error)) {
+        error = { ...error, login_url: resolveErrorLoginUrl(error) };
+      }
+    } else if (e instanceof CliError) {
+      error = { code: e.code, message: e.message, details: e.details };
+    } else {
+      error = { code: "CLI_ERROR", message: e instanceof Error ? e.message : String(e) };
     }
-    console.error((e as Error).message ?? String(e));
-    process.exit(1);
+    return exitWithOutput({
+      code: 1,
+      stderr: JSON.stringify(error, null, 2),
+    });
   }
 }
