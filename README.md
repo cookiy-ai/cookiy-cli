@@ -12,6 +12,8 @@ npm install -g cookiy-cli
 npm update -g cookiy-cli
 ```
 
+For CI and automated tests, set `COOKIY_SKIP_UPDATE_CHECK=1` to disable background update checks and update-cache writes.
+
 ## Output and request conventions
 
 - Successful V1 responses print `data` to stdout. Standard API errors print the server's `error` to stderr and exit nonzero. HTTP 401 errors additionally receive a top-level `login_url`; precedence is server top-level `login_url`, server `details.login_url`, then the CLI-derived configured-server URL. The server's `details` value is unchanged.

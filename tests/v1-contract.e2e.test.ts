@@ -160,7 +160,7 @@ describe("REST response compatibility", () => {
         return;
       }
 
-      if (req.url === "/api/v1/quant/surveys/survey-all/raw-responses?format=csv") {
+      if (req.url === "/api/v1/quant/surveys/survey-all/raw-responses?format=csv&only_completed=false") {
         res.setHeader("content-type", "text/csv; charset=utf-8");
         res.end("answer\ncomplete\nincomplete");
         return;
@@ -389,7 +389,7 @@ describe("REST response compatibility", () => {
     expect(stdout).toBe('"foo"\n');
   });
 
-  it("passes include-incomplete without only_completed", async () => {
+  it("passes only_completed=false with include-incomplete", async () => {
     const { stdout, stderr, code } = await runCli(
       ["--token", tmpToken("fake-token"), "quant", "raw-response", "--survey-id", "survey-all", "--include-incomplete"],
       { COOKIY_SERVER_URL: server.url },

@@ -28,7 +28,7 @@ export function runCli(
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [DIST, ...args], {
       cwd: ROOT,
-      env: { ...process.env, ...(env ?? {}) },
+      env: { ...process.env, COOKIY_SKIP_UPDATE_CHECK: "1", ...(env ?? {}) },
     });
     let stdout = "";
     let stderr = "";

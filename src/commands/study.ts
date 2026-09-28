@@ -13,19 +13,12 @@ const REPORT_POLL_INTERVAL_MS = 15000;
 
 function expandDottedKeys(
   input: Record<string, unknown>,
+  result: Record<string, unknown> = Object.create(null),
+  prefix = "",
 ): Record<string, unknown> {
-  const result = Object.create(null) as Record<string, unknown>;
-
   for (const [key, value] of Object.entries(input)) {
+    const patchPath = prefix ? `${prefix}.${key}` : key;
     const parts = key.split(".");
-    if (parts.length === 1) {
-      result[key] =
-        value !== null && typeof value === "object" && !Array.isArray(value)
-          ? expandDottedKeys(value as Record<string, unknown>)
-          : value;
-      continue;
-    }
-
     let cursor = result;
     for (const part of parts.slice(0, -1)) {
       if (
@@ -33,11 +26,31 @@ function expandDottedKeys(
         typeof cursor[part] !== "object" ||
         Array.isArray(cursor[part])
       ) {
+        if (Object.hasOwn(cursor, part)) die(`Conflicting patch path: ${patchPath}`);
         cursor[part] = Object.create(null);
       }
       cursor = cursor[part] as Record<string, unknown>;
     }
-    cursor[parts.at(-1)!] = value;
+
+    const lastPart = parts.at(-1)!;
+    if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+      if (
+        cursor[lastPart] === null ||
+        typeof cursor[lastPart] !== "object" ||
+        Array.isArray(cursor[lastPart])
+      ) {
+        if (Object.hasOwn(cursor, lastPart)) die(`Conflicting patch path: ${patchPath}`);
+        cursor[lastPart] = Object.create(null);
+      }
+      expandDottedKeys(
+        value as Record<string, unknown>,
+        cursor[lastPart] as Record<string, unknown>,
+        patchPath,
+      );
+    } else {
+      if (Object.hasOwn(cursor, lastPart)) die(`Conflicting patch path: ${patchPath}`);
+      cursor[lastPart] = value;
+    }
   }
 
   return result;

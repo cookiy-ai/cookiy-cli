@@ -91,6 +91,32 @@ describe("study guide update", () => {
       expected: { meta: { sample_size: 8, interview_duration: 15 } },
     },
     {
+      name: "mixed keys with nested object first",
+      input: { meta: { sample_size: 8 }, "meta.interview_duration": 15 },
+      expected: { meta: { sample_size: 8, interview_duration: 15 } },
+    },
+    {
+      name: "mixed keys with dotted key first",
+      input: { "meta.interview_duration": 15, meta: { sample_size: 8 } },
+      expected: { meta: { sample_size: 8, interview_duration: 15 } },
+    },
+    {
+      name: "mixed object values with nested object first",
+      input: {
+        screening: { rules: { "age.maximum": 65 } },
+        "screening.rules": { "age.minimum": 18 },
+      },
+      expected: { screening: { rules: { age: { minimum: 18, maximum: 65 } } } },
+    },
+    {
+      name: "mixed object values with dotted key first",
+      input: {
+        "screening.rules": { "age.minimum": 18 },
+        screening: { rules: { "age.maximum": 65 } },
+      },
+      expected: { screening: { rules: { age: { minimum: 18, maximum: 65 } } } },
+    },
+    {
       name: "nested values inside dotted keys",
       input: { "participant_screening.questions": [{ text: "Who?" }] },
       expected: { participant_screening: { questions: [{ text: "Who?" }] } },
@@ -119,6 +145,63 @@ describe("study guide update", () => {
         patch: expected,
       },
     });
+  });
+
+  it.each([
+    {
+      name: "duplicate leaf with nested object first",
+      input: { meta: { sample_size: 8 }, "meta.sample_size": 12 },
+    },
+    {
+      name: "duplicate leaf with dotted key first",
+      input: { "meta.sample_size": 12, meta: { sample_size: 8 } },
+    },
+    {
+      name: "object and value with nested object first",
+      input: { meta: { sample_size: { target: 8 } }, "meta.sample_size": 12 },
+    },
+    {
+      name: "object and value with dotted key first",
+      input: { "meta.sample_size": 12, meta: { sample_size: { target: 8 } } },
+    },
+    {
+      name: "value before a descendant path",
+      input: { meta: 8, "meta.sample_size": 12 },
+    },
+    {
+      name: "descendant path before a value",
+      input: { "meta.sample_size": 12, meta: 8 },
+    },
+    {
+      name: "null before a descendant path",
+      input: { meta: null, "meta.sample_size": 12 },
+    },
+    {
+      name: "descendant path before null",
+      input: { "meta.sample_size": 12, meta: null },
+    },
+    {
+      name: "array before a descendant path",
+      input: {
+        "participant_screening.questions": [{ text: "Who?" }],
+        "participant_screening.questions.0.text": "Why?",
+      },
+    },
+    {
+      name: "descendant path before an array",
+      input: {
+        "participant_screening.questions.0.text": "Why?",
+        "participant_screening.questions": [{ text: "Who?" }],
+      },
+    },
+  ])("rejects conflicting $name without sending a patch", async ({ input }) => {
+    const requestCount = requests.length;
+    const { stdout, stderr, code } = await runGuideUpdate(input);
+
+    expect(code).toBe(1);
+    expect(stdout).toBe("");
+    expect(stderr).toContain("Conflicting patch path:");
+    expect(requests).toHaveLength(requestCount);
   });
 
   it("accepts the legacy idempotency flag without inventing a response receipt", async () => {

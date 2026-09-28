@@ -90,8 +90,10 @@ export function registerQuant(program: Command): void {
     .option("--include-incomplete", "include incomplete responses", false)
     .action(
       async (opts: { surveyId: string; includeIncomplete?: boolean }) => {
-        const query: Record<string, unknown> = { format: "csv" };
-        if (!opts.includeIncomplete) query.only_completed = "true";
+        const query: Record<string, unknown> = {
+          format: "csv",
+          only_completed: !opts.includeIncomplete,
+        };
         await runV1(() =>
           v1.get(
             `/v1/quant/surveys/${encodeURIComponent(opts.surveyId)}/raw-responses`,
