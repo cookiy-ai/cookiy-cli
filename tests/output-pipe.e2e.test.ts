@@ -37,7 +37,7 @@ describe("output pipe closes early", () => {
     try {
       const child = spawn(process.execPath, [DIST, "--token", token, "study", "guide", "get", "--study-id", "success"], {
         cwd: ROOT,
-        env: { ...process.env, COOKIY_SERVER_URL: server.url },
+        env: { ...process.env, COOKIY_SERVER_URL: server.url, COOKIY_SKIP_UPDATE_CHECK: "1" },
         stdio: ["ignore", outputFd, "pipe"],
       });
       let stderr = "";
@@ -59,7 +59,7 @@ describe("output pipe closes early", () => {
   it.each(["success", "failed"])("%s keeps its exit status without an EPIPE diagnostic", async (mode) => {
     const child = spawn(process.execPath, [DIST, "--token", token, "study", "guide", "get", "--study-id", mode], {
       cwd: ROOT,
-      env: { ...process.env, COOKIY_SERVER_URL: server.url },
+      env: { ...process.env, COOKIY_SERVER_URL: server.url, COOKIY_SKIP_UPDATE_CHECK: "1" },
     });
     let stdout = "";
     let stderr = "";
