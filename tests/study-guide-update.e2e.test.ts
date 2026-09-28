@@ -46,9 +46,8 @@ describe("study guide update", () => {
         res.end(
           JSON.stringify({
             study_id: "study-1",
-            revision: "revision-next",
-            base_revision: "revision-base",
-            idempotency_key: "request-key",
+            revision: 2,
+            base_revision: 1,
             applied: true,
           }),
         );
@@ -60,7 +59,7 @@ describe("study guide update", () => {
     await server.close();
   });
 
-  function runGuideUpdate(patch: Record<string, unknown>) {
+  function runGuideUpdate(patch: Record<string, unknown>, extraArgs: string[] = []) {
     return runCli(
       [
         "--token",
@@ -71,9 +70,8 @@ describe("study guide update", () => {
         "--study-id",
         "study-1",
         "--base-revision",
-        "revision-base",
-        "--idempotency-key",
-        "request-key",
+        "1",
+        ...extraArgs,
         "--json",
         JSON.stringify(patch),
       ],
@@ -106,16 +104,40 @@ describe("study guide update", () => {
     const { stdout, stderr, code } = await runGuideUpdate(input);
     expect(code).toBe(0);
     expect(stderr).toBe("");
-    expect(JSON.parse(stdout).applied).toBe(true);
+    expect(JSON.parse(stdout)).toEqual({
+      study_id: "study-1",
+      revision: 2,
+      base_revision: 1,
+      applied: true,
+    });
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
     expect(requests.at(-1)).toEqual({
       method: "PATCH",
       url: "/api/v1/studies/study-1/discussion-guide",
       body: {
-        base_revision: "revision-base",
-        idempotency_key: "request-key",
+        base_revision: "1",
         patch: expected,
       },
+    });
+  });
+
+  it("accepts the legacy idempotency flag without inventing a response receipt", async () => {
+    const { stdout, stderr, code } = await runGuideUpdate(
+      { "meta.sample_size": 8 },
+      ["--idempotency-key", "request-key"],
+    );
+    expect(code).toBe(0);
+    expect(stderr).toBe("");
+    expect(JSON.parse(stdout)).toEqual({
+      study_id: "study-1",
+      revision: 2,
+      base_revision: 1,
+      applied: true,
+    });
+    expect(requests.at(-1)?.body).toEqual({
+      base_revision: "1",
+      idempotency_key: "request-key",
+      patch: { meta: { sample_size: 8 } },
     });
   });
 });

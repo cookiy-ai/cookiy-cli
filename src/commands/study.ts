@@ -184,7 +184,7 @@ export function registerStudy(program: Command): void {
     .description("apply patch to discussion guide")
     .requiredOption("--study-id <uuid>", "study id")
     .requiredOption("--base-revision <s>", "base revision")
-    .requiredOption("--idempotency-key <s>", "idempotency key")
+    .option("--idempotency-key <s>", "legacy compatibility only; guide updates use base revision")
     .option("--change-message <s>", "change message")
     .requiredOption(
       "--json <patch>",
@@ -195,15 +195,16 @@ export function registerStudy(program: Command): void {
       async (opts: {
         studyId: string;
         baseRevision: string;
-        idempotencyKey: string;
+        idempotencyKey?: string;
         changeMessage?: string;
         json: Record<string, unknown>;
       }) => {
         const body: Record<string, unknown> = {
           base_revision: opts.baseRevision,
-          idempotency_key: opts.idempotencyKey,
           patch: expandDottedKeys(opts.json),
         };
+        if (opts.idempotencyKey !== undefined)
+          body.idempotency_key = opts.idempotencyKey;
         if (opts.changeMessage !== undefined)
           body.change_message = opts.changeMessage;
         await runV1(() =>
