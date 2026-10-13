@@ -141,32 +141,38 @@ describe("REST response compatibility", () => {
         return;
       }
 
-      if (req.url === "/api/v1/quant/surveys/survey-empty/raw-responses?format=csv&only_completed=true") {
-        res.setHeader("content-type", "text/csv; charset=utf-8");
-        res.end("");
+      if (req.url === "/api/v1/quant/surveys/survey-empty/raw-responses?only_completed=true") {
+        res.end(JSON.stringify({ ok: true, data: { csv: "" } }));
         return;
       }
 
-      if (req.url === "/api/v1/quant/surveys/survey-large/raw-responses?format=csv&only_completed=true") {
+      if (req.url === "/api/v1/quant/surveys/survey-large/raw-responses?only_completed=true") {
         res.statusCode = 200;
-        res.setHeader("content-type", "text/csv; charset=utf-8");
-        res.end(`answer,notes\n1,"${LARGE_OUTPUT}"\n2,response-complete`);
+        res.end(JSON.stringify({ ok: true, data: { csv: `answer,notes\n1,"${LARGE_OUTPUT}"\n2,response-complete` } }));
         return;
       }
 
-      if (req.url === "/api/v1/quant/surveys/survey-json-looking/raw-responses?format=csv&only_completed=true") {
-        res.setHeader("content-type", "text/csv; charset=utf-8");
-        res.end('"foo"');
+      if (req.url === "/api/v1/quant/surveys/survey-json-looking/raw-responses?only_completed=true") {
+        res.end(JSON.stringify({ ok: true, data: { csv: '"foo"' } }));
         return;
       }
 
-      if (req.url === "/api/v1/quant/surveys/survey-all/raw-responses?format=csv&only_completed=false") {
-        res.setHeader("content-type", "text/csv; charset=utf-8");
-        res.end("answer\ncomplete\nincomplete");
+      if (req.url === "/api/v1/quant/surveys/survey-all/raw-responses?only_completed=false") {
+        res.end(JSON.stringify({ ok: true, data: { csv: "answer\ncomplete\nincomplete" } }));
         return;
       }
 
-      if (req.url === "/api/v1/quant/surveys/survey-error/raw-responses?format=csv&only_completed=true") {
+      if (req.url === "/api/v1/quant/surveys/survey-missing-csv/raw-responses?only_completed=true") {
+        res.end(JSON.stringify({ ok: true, data: { row_count: 0 } }));
+        return;
+      }
+
+      if (req.url === "/api/v1/quant/surveys/survey-invalid-csv/raw-responses?only_completed=true") {
+        res.end(JSON.stringify({ ok: true, data: { csv: 42 } }));
+        return;
+      }
+
+      if (req.url === "/api/v1/quant/surveys/survey-error/raw-responses?only_completed=true") {
         res.statusCode = 402;
         res.end(JSON.stringify({ ok: false, error: { code: "INSUFFICIENT_BALANCE", message: "Not enough balance" } }));
         return;
@@ -399,7 +405,17 @@ describe("REST response compatibility", () => {
     expect(stdout).toBe("answer\ncomplete\nincomplete\n");
   });
 
-  it("keeps JSON errors when requesting CSV", async () => {
+  it.each(["survey-missing-csv", "survey-invalid-csv"])("fails when %s does not return a CSV string", async (surveyId) => {
+    const { stdout, stderr, code } = await runCli(
+      ["--token", tmpToken("fake-token"), "quant", "raw-response", "--survey-id", surveyId],
+      { COOKIY_SERVER_URL: server.url },
+    );
+    expect(code).toBe(1);
+    expect(stdout).toBe("");
+    expect(JSON.parse(stderr)).toEqual({ code: "INVALID_RESPONSE", message: "Quant raw-response must contain a string csv field." });
+  });
+
+  it("keeps JSON errors when exporting CSV", async () => {
     const { stdout, stderr, code } = await runCli(
       ["--token", tmpToken("fake-token"), "quant", "raw-response", "--survey-id", "survey-error"],
       { COOKIY_SERVER_URL: server.url },
