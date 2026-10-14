@@ -1,4 +1,4 @@
-# cookiy-cli
+# @cookiyai/cookiy-cli
 
 Command-line client for Cookiy AI — run user research, quant surveys, and recruit participants from your terminal.
 
@@ -6,10 +6,19 @@ Command-line client for Cookiy AI — run user research, quant surveys, and recr
 
 ```bash
 # Install once (requires Node.js 18+)
-npm install -g cookiy-cli
+npm install -g @cookiyai/cookiy-cli
 
 # Upgrade
-npm update -g cookiy-cli
+npm update -g @cookiyai/cookiy-cli
+```
+
+The commands remain `cookiy` and `cookiy-cli`.
+
+If you previously installed the unscoped package, migrate with:
+
+```bash
+npm uninstall -g cookiy-cli
+npm install -g @cookiyai/cookiy-cli
 ```
 
 For CI and automated tests, set `COOKIY_SKIP_UPDATE_CHECK=1` to disable background update checks and update-cache writes.
