@@ -26,7 +26,7 @@ function gt(a, b) {
   return false;
 }
 const req = https.get(
-  'https://registry.npmjs.org/cookiy-cli/latest',
+  'https://registry.npmjs.org/@cookiyai%2Fcookiy-cli/latest',
   { timeout: 3000, headers: { Accept: 'application/json' } },
   (res) => {
     let body = '';
@@ -37,7 +37,7 @@ const req = https.get(
         if (typeof latest !== 'string' || !gt(latest, current)) return;
         const child = spawn(
           'npm',
-          ['install', '-g', '--silent', '--no-audit', '--no-fund', 'cookiy-cli@' + latest],
+          ['install', '-g', '--silent', '--no-audit', '--no-fund', '@cookiyai/cookiy-cli@' + latest],
           { detached: true, stdio: 'ignore', windowsHide: true },
         );
         child.unref();
@@ -56,8 +56,8 @@ req.on('timeout', () => req.destroy());
  *      once a day regardless of how many `cookiy <cmd>` invocations the
  *      user runs.
  *   2. Subprocess — does an HTTPS GET against the npm registry's
- *      `/cookiy-cli/latest` dist-tag, compares semver, and only invokes
- *      `npm install -g cookiy-cli@<latest>` when strictly newer.
+ *      `/@cookiyai%2Fcookiy-cli/latest` dist-tag, compares semver, and only invokes
+ *      `npm install -g @cookiyai/cookiy-cli@<latest>` when strictly newer.
  *
  * Parent returns immediately. The spawned Node probe is detached and
  * unref'd; if it later decides to install, that npm process is itself

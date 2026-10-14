@@ -93,7 +93,7 @@ describe("background updates", () => {
         throw new Error(`Unexpected probe dependency: ${name}`);
       },
     }, { timeout: 1000 });
-    expect(get.mock.calls[0][0]).toBe("https://registry.npmjs.org/cookiy-cli/latest");
+    expect(get.mock.calls[0][0]).toBe("https://registry.npmjs.org/@cookiyai%2Fcookiy-cli/latest");
     const response = new EventEmitter();
     onResponse(response);
     response.emit("data", JSON.stringify({ version: latest }));
@@ -101,7 +101,7 @@ describe("background updates", () => {
 
     if (latest === "1.0.1") {
       expect(install).toHaveBeenCalledWith("npm", [
-        "install", "-g", "--silent", "--no-audit", "--no-fund", "cookiy-cli@1.0.1",
+        "install", "-g", "--silent", "--no-audit", "--no-fund", "@cookiyai/cookiy-cli@1.0.1",
       ], { detached: true, stdio: "ignore", windowsHide: true });
       expect(unref).toHaveBeenCalledOnce();
     } else {
