@@ -50,7 +50,7 @@
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
     "start": "node dist/index.js",
-    "test": "vitest run",
+    "test": "npm run build && vitest run",
     "test:watch": "vitest",
     "prepublishOnly": "npm run build"
   },

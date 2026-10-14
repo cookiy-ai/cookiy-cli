@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { v1, runV1 } from "../v1Client.js";
-import { parseJsonObjectOption } from "../util.js";
+import { CliError, parseJsonObjectOption } from "../util.js";
 
 export function registerQuant(program: Command): void {
   const quant = program.command("quant").description(
@@ -90,18 +90,23 @@ export function registerQuant(program: Command): void {
     .option("--include-incomplete", "include incomplete responses", false)
     .action(
       async (opts: { surveyId: string; includeIncomplete?: boolean }) => {
-        const query: Record<string, unknown> = {};
-        if (!opts.includeIncomplete) query.only_completed = "true";
+        const query: Record<string, unknown> = {
+          only_completed: !opts.includeIncomplete,
+        };
         await runV1(async () => {
-          const r = (await v1.get(
+          const result = await v1.get(
             `/v1/quant/surveys/${encodeURIComponent(opts.surveyId)}/raw-responses`,
             query,
-          )) as { csv?: string } | null;
-          if (r?.csv) {
-            console.log(r.csv);
-            return undefined;
+          );
+          if (
+            typeof result !== "object" ||
+            result === null ||
+            !("csv" in result) ||
+            typeof result.csv !== "string"
+          ) {
+            throw new CliError("INVALID_RESPONSE", "Quant raw-response must contain a string csv field.");
           }
-          return r;
+          return result.csv;
         });
       },
     );

@@ -1,5 +1,63 @@
 import { resolveLoginUrl } from "./config.js";
 
+export class CliError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+    public readonly details?: unknown,
+  ) {
+    super(message);
+    this.name = "CliError";
+  }
+}
+
+function writeFully(stream: NodeJS.WriteStream, text: string): Promise<void> {
+  const output = text.endsWith("\n") ? text : `${text}\n`;
+
+  return new Promise((resolve, reject) => {
+    // A failed write invokes its callback AND emits error; both need handling.
+    stream.once("error", reject);
+    stream.write(output, (error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      stream.removeListener("error", reject);
+      resolve();
+    });
+  });
+}
+
+export async function exitWithOutput(options: {
+  code: number;
+  stdout?: string;
+  stderr?: string;
+}): Promise<never> {
+  try {
+    if (options.stdout !== undefined) {
+      await writeFully(process.stdout, options.stdout);
+    }
+    if (options.stderr !== undefined) {
+      await writeFully(process.stderr, options.stderr);
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === "EPIPE") {
+      // Downstream stopped reading (e.g. head); preserve the command's result.
+      process.exit(options.code);
+    }
+    if (!process.stderr.destroyed) {
+      try {
+        await writeFully(process.stderr, `Failed to write output: ${error instanceof Error ? error.message : String(error)}`);
+      } catch {
+        // No usable error stream remains; communicate failure via the exit code.
+      }
+    }
+    process.exit(options.code === 0 ? 1 : options.code);
+  }
+  process.exit(options.code);
+}
+
+// Synchronous input/authentication failures keep their small, immediate diagnostics.
 export function die(msg: string, code = 1): never {
   console.error(msg);
   process.exit(code);

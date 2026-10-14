@@ -64,6 +64,8 @@ req.on('timeout', () => req.destroy());
  * detached. Nothing surfaces to the user.
  */
 export function scheduleBackgroundUpdate(): void {
+  if (process.env.COOKIY_SKIP_UPDATE_CHECK === "1") return;
+
   try {
     const now = Date.now();
     if (fs.existsSync(CACHE_FILE)) {
