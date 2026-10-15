@@ -13,7 +13,7 @@ export function registerRecruit(program: Command): void {
     .option("--study-id <uuid>", "study id (required for interview studies)")
     .option(
       "--survey-public-url <url>",
-      "public survey URL (auto-selects quant mode)",
+      "public survey URL (selects quant mode when --study-id is omitted)",
     )
     .option("--confirmation-token <s>", "step-2 confirmation token")
     .option("--plain-text <s>", "audience description / free-text brief")

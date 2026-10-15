@@ -16,10 +16,10 @@ export function registerBilling(program: Command): void {
 
   billing
     .command("checkout")
-    .description("create Stripe checkout session")
+    .description("get a wallet top-up link")
     .requiredOption(
       "--amount-usd-cents <n>",
-      "USD cents (min 100). Internally mapped to amount_cents.",
+      "Integer USD cents (minimum 1000 / $10).",
       parseIntOption("amount-usd-cents"),
     )
     .action(async (opts: { amountUsdCents: number }) => {
