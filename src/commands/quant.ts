@@ -45,7 +45,7 @@ export function registerQuant(program: Command): void {
     .requiredOption("--survey-id <id>", "numeric sid")
     .requiredOption(
       "--json <obj>",
-      "JSON object with survey/groups/questions/quotas_*",
+      "JSON patch for survey title and presentation format only",
       parseJsonObjectOption("json"),
     )
     .action(

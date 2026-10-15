@@ -340,7 +340,7 @@ export function registerStudy(program: Command): void {
     .command("generate")
     .description("generate report")
     .requiredOption("--study-id <uuid>", "study id")
-    .option("--skip-synthetic-interview", "skip synthetic interview step", false)
+    .option("--skip-synthetic-interview", "exclude synthetic interviews from the report", false)
     .action(
       async (opts: {
         studyId: string;
