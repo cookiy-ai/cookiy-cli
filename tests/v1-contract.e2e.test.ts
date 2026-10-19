@@ -260,6 +260,7 @@ describe("REST response compatibility", () => {
     expect(JSON.parse(stderr)).toEqual({
       code: "BAD_REQUEST",
       message: "The request body is invalid.",
+      http_status: 400,
       details: {
         issues: [
           {
@@ -293,6 +294,7 @@ describe("REST response compatibility", () => {
     expect(JSON.parse(stderr)).toEqual({
       code: "INSUFFICIENT_BALANCE",
       message: "Insufficient balance for synthetic interview",
+      http_status: 402,
       details: {
         feature: "synthetic",
         balance_cents: 0,
@@ -422,7 +424,7 @@ describe("REST response compatibility", () => {
     );
     expect(code).toBe(1);
     expect(stdout).toBe("");
-    expect(JSON.parse(stderr)).toEqual({ code: "INSUFFICIENT_BALANCE", message: "Not enough balance" });
+    expect(JSON.parse(stderr)).toEqual({ code: "INSUFFICIENT_BALANCE", message: "Not enough balance", http_status: 402 });
   });
 
   it("keeps the timeout active while reading the response body", async () => {

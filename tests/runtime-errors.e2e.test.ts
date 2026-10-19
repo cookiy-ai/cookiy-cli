@@ -15,6 +15,7 @@ describe("V1 runtime errors use JSON stderr", () => {
     token = path.join(dir, "token.txt");
     fs.writeFileSync(token, "fake-token");
     server = await startMockServer((req, res) => {
+      res.setHeader("x-request-id", "request-test-123");
       const studyId = req.url?.split("/")[4];
       if (studyId === "disconnect") {
         req.socket.destroy();
@@ -43,7 +44,9 @@ describe("V1 runtime errors use JSON stderr", () => {
         return;
       }
       res.statusCode = 500;
-      if (studyId === "html") res.end("<!doctype html><html><title>Upstream unavailable</title></html>");
+      if (studyId === "null-error") res.end(JSON.stringify({ ok: false, error: null }));
+      else if (studyId === "server-error") res.end(JSON.stringify({ ok: false, error: { message: "private database password", details: { stack: "private stack" } } }));
+      else if (studyId === "html") res.end("<!doctype html><html><title>private upstream failure</title></html>");
       else res.end("upstream unavailable");
     });
   });
@@ -56,6 +59,8 @@ describe("V1 runtime errors use JSON stderr", () => {
   it.each([
     ["plain", "HTTP_500"],
     ["html", "HTTP_500"],
+    ["null-error", "HTTP_500"],
+    ["server-error", "HTTP_500"],
     ["unauthorized", "UNAUTHORIZED"],
     ["api-error", "UNAUTHORIZED"],
     ["forbidden", "UNAUTHORIZED"],
@@ -73,17 +78,25 @@ describe("V1 runtime errors use JSON stderr", () => {
     const error = JSON.parse(stderr);
     expect(error.code).toBe(errorCode);
     expect(error.message).toEqual(expect.any(String));
-    if (mode === "plain") expect(error.details).toBe("upstream unavailable");
-    if (mode === "html") expect(error.details).toBe("(HTML body) Upstream unavailable");
+    if (["plain", "html", "null-error", "server-error"].includes(mode)) {
+      expect(error).toEqual({ code: "HTTP_500", message: "The service is temporarily unavailable.", http_status: 500, request_id: "request-test-123" });
+      expect(stderr).not.toContain("private");
+    }
     if (mode === "unauthorized") expect(error.login_url).toBe(`${server.url}/oauth/cli/start`);
     if (mode === "api-error") expect(error).toEqual({
       ...apiError,
       login_url: `${server.url}/oauth/cli/start`,
+      http_status: 401,
+      request_id: "request-test-123",
     });
-    if (mode === "forbidden") expect(error).toEqual(apiError);
+    if (mode === "forbidden") expect(error).toEqual({ ...apiError, http_status: 403, request_id: "request-test-123" });
     if (mode === "disconnect") expect(error.message).toContain("UND_ERR_SOCKET");
     if (mode === "invalid-url") expect(error.message).toBe("Invalid URL");
     if (mode.endsWith("timeout")) expect(error.message).toBe("[timeout 1s]");
+    if (["disconnect", "timeout", "body-timeout", "invalid-url"].includes(mode)) {
+      expect(error.http_status).toBeUndefined();
+      expect(error.request_id).toBeUndefined();
+    }
   });
 
   it.each([
@@ -106,6 +119,8 @@ describe("V1 runtime errors use JSON stderr", () => {
       message: "Please sign in again",
       ...fields,
       login_url: loginUrl ?? `${server.url}/oauth/cli/start`,
+      http_status: 401,
+      request_id: "request-test-123",
     });
   });
 });

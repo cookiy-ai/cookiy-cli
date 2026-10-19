@@ -81,9 +81,15 @@ describe("E2E — Token file issues (T1–T3) [no network]", () => {
   });
 });
 
-describe("E2E — HTTP 401 from real s-api.cookiy.ai (T4–T5) [real network]", () => {
-  // These tests hit the real production API with a fake token and assert only
-  // the CLI-owned 401 contract. The server's error field names may evolve.
+describe("HTTP 401 contract (T4–T5) [local server]", () => {
+  let server: MockServer;
+  beforeAll(async () => {
+    server = await startMockServer((_req, res) => {
+      res.statusCode = 401;
+      res.end(JSON.stringify({ ok: false, error: { code: "UNAUTHORIZED", message: "Invalid token" } }));
+    });
+  });
+  afterAll(async () => { await server.close(); });
 
   it("T4: invalid token, billing balance → 401 path, exit 1", async () => {
     const tokenPath = tmpToken("fake-invalid-token-xyz");
@@ -93,7 +99,7 @@ describe("E2E — HTTP 401 from real s-api.cookiy.ai (T4–T5) [real network]", 
       tokenPath,
       "billing",
       "balance",
-    ]);
+    ], { COOKIY_SERVER_URL: server.url });
 
     expect(code).toBe(1);
     expect(JSON.parse(stderr).login_url).toEqual(expect.any(String));
@@ -107,7 +113,7 @@ describe("E2E — HTTP 401 from real s-api.cookiy.ai (T4–T5) [real network]", 
       tokenPath,
       "study",
       "list",
-    ]);
+    ], { COOKIY_SERVER_URL: server.url });
 
     expect(code).toBe(1);
     expect(JSON.parse(stderr).login_url).toEqual(expect.any(String));
@@ -151,6 +157,7 @@ describe("E2E — HTTP 403 host-not-in-allowlist [mock — real API doesn't easi
       code: "HTTP_403",
       message: "[HTTP 403] host not in allowlist",
       details: expect.stringContaining("host not in allowlist"),
+      http_status: 403,
     });
     // 403 must NOT trigger the auth-redirect banner — that is reserved for
     // missing/empty token files (T1–T3) and 401 server responses (T4–T5).
@@ -179,7 +186,7 @@ describe("E2E — HTTP 4xx/5xx with HTML body (T_HTML) [mock — real API return
     await server.close();
   });
 
-  it("T_HTML: error response with HTML body → summarized via <title>, exit 1", async () => {
+  it("T_HTML: upstream HTML is suppressed while HTTP status is retained", async () => {
     const tokenPath = tmpToken("fake-token");
 
     const { stderr, code } = await runCli(
@@ -190,13 +197,10 @@ describe("E2E — HTTP 4xx/5xx with HTML body (T_HTML) [mock — real API return
     expect(code).toBe(1);
     expect(JSON.parse(stderr)).toEqual({
       code: "HTTP_502",
-      message: "[HTTP 502]",
-      details: "(HTML body) 502 Bad Gateway",
+      message: "The service is temporarily unavailable.",
+      http_status: 502,
     });
-    expect(stderr).toContain("[HTTP 502]");
-    // formatBody() should detect the HTML and emit a one-line summary using
-    // the <title>, not dump the raw HTML to stderr.
-    expect(stderr).toContain("(HTML body) 502 Bad Gateway");
+    expect(stderr).not.toContain("502 Bad Gateway");
     expect(stderr).not.toContain("<!doctype html>");
     expect(stderr).not.toContain("<html>");
   });

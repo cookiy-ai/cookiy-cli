@@ -7,6 +7,7 @@ export class V1RequestError extends Error {
     message: string,
     public readonly body?: unknown,
     public readonly details?: string,
+    public readonly requestId?: string,
   ) {
     super(message);
     this.name = "V1RequestError";
@@ -123,14 +124,18 @@ async function request(
     }
 
     if (res.status < 200 || res.status >= 300) {
-      const bodyDisplay = formatBody(parsed, text);
+      const bodyDisplay = res.status >= 500 ? null : formatBody(parsed, text);
+      const requestIdHeader = res.headers.get("x-request-id");
+      const requestId = requestIdHeader && /^[A-Za-z0-9._:-]{1,128}$/.test(requestIdHeader)
+        ? requestIdHeader
+        : undefined;
       const serverMessage =
-        parsed && typeof parsed === "object"
+        res.status < 500 && parsed && typeof parsed === "object"
           ? (parsed as { message?: unknown }).message
           : undefined;
       const head = `[HTTP ${res.status}]`;
       const msg = serverMessage ? `${head} ${String(serverMessage)}` : head;
-      throw new V1RequestError(res.status, msg, parsed, bodyDisplay ?? undefined);
+      throw new V1RequestError(res.status, msg, parsed, bodyDisplay ?? undefined, requestId);
     }
 
     return unwrapSuccessResponse(parsed);
@@ -176,8 +181,15 @@ export async function runV1(
   } catch (e: unknown) {
     let error: unknown;
     if (e instanceof V1RequestError) {
-      error = extractApiError(e.body);
-      if (error === undefined) {
+      const apiError = extractApiError(e.body);
+      if (e.status >= 500) {
+        error = {
+          code: `HTTP_${e.status}`,
+          message: "The service is temporarily unavailable.",
+        };
+      } else if (isRecord(apiError) && typeof apiError.message === "string") {
+        error = apiError;
+      } else {
         error = e.status === 401
           ? {
               code: "UNAUTHORIZED",
@@ -188,6 +200,11 @@ export async function runV1(
       if (e.status === 401 && isRecord(error)) {
         error = { ...error, login_url: resolveErrorLoginUrl(error) };
       }
+      error = {
+        ...(error as Record<string, unknown>),
+        http_status: e.status,
+        ...(e.requestId ? { request_id: e.requestId } : {}),
+      };
     } else if (e instanceof CliError) {
       error = { code: e.code, message: e.message, details: e.details };
     } else {
